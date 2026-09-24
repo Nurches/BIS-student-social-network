@@ -1,0 +1,97 @@
+// Student Social Network — ER model (Data & Database, Taubay Laila)
+// HOW TO USE: open https://dbdiagram.io/d , paste this whole file into the left panel.
+// The diagram is drawn on the right; export it with Export -> PNG and attach the image
+// as Evidence for Lab 04.
+//
+// Design decisions recorded here:
+//  1. Registrations are a separate table with a unique (student_id, event_id) pair, so
+//     "one student registers once" is guaranteed by the database, not by application code.
+//  2. The event status field lets an admin prepare a draft and cancel an event without
+//     deleting it, so students who registered can still be notified.
+//  3. Notifications are stored, not only pushed, so a student who reinstalls the app
+//     still sees what was announced, and so we can measure delivery (analytics).
+
+Table student {
+  student_id     integer      [pk, increment]
+  email          varchar(120) [unique, not null, note: 'university address only — BR-01']
+  full_name      varchar(120) [not null]
+  password_hash  varchar(120) [not null, note: 'bcrypt, cost 12 — NFR-02']
+  faculty        varchar(80)  [note: 'used to suggest relevant communities']
+  enrolled_year  integer
+  is_moderator   boolean      [not null, default: false]
+  failed_logins  integer      [not null, default: 0, note: 'NFR-02 lockout counter']
+  locked_until   timestamp    [note: 'NFR-02: set 15 minutes ahead after 5 failures']
+  created_at     timestamp    [not null]
+}
+
+Table community {
+  community_id   integer      [pk, increment]
+  name           varchar(120) [not null, unique]
+  description    text
+  owner_id       integer      [not null, note: 'community admin confirmed by the Student Union']
+  is_confirmed   boolean      [not null, default: false, note: 'BR-01: only confirmed communities publish']
+  created_at     timestamp    [not null]
+}
+
+Table subscription {
+  subscription_id integer   [pk, increment]
+  student_id      integer   [not null]
+  community_id    integer   [not null]
+  created_at      timestamp [not null]
+
+  indexes {
+    (student_id, community_id) [unique, note: 'a student subscribes to a community once']
+  }
+}
+
+Table event {
+  event_id              integer      [pk, increment]
+  community_id          integer      [not null]
+  title                 varchar(160) [not null]
+  description           text
+  location              varchar(160)
+  starts_at             timestamp    [not null]
+  registration_deadline timestamp    [not null, note: 'must be in the future when published — FR-02']
+  participant_limit     integer      [not null, note: 'compared with the count of confirmed registrations — FR-03']
+  status                varchar(20)  [not null, default: 'draft', note: 'draft | published | cancelled']
+  created_at            timestamp    [not null]
+
+  indexes {
+    (community_id, registration_deadline)
+    (status, registration_deadline) [note: 'feed query: published events with a future deadline — NFR-01']
+  }
+}
+
+Table registration {
+  registration_id integer     [pk, increment]
+  student_id      integer     [not null]
+  event_id        integer     [not null]
+  status          varchar(20) [not null, default: 'confirmed', note: 'confirmed | waiting_list | cancelled — FR-03']
+  created_at      timestamp   [not null]
+
+  indexes {
+    (student_id, event_id) [unique, note: 'one student registers for an event once']
+    (event_id, status)     [note: 'counting confirmed places — FR-03']
+  }
+}
+
+Table notification {
+  notification_id integer   [pk, increment]
+  student_id      integer   [not null]
+  event_id        integer   [not null]
+  sent_at         timestamp
+  is_read         boolean   [not null, default: false]
+
+  indexes {
+    (student_id, is_read)
+  }
+}
+
+Ref: community.owner_id > student.student_id
+Ref: subscription.student_id > student.student_id
+Ref: subscription.community_id > community.community_id
+Ref: event.community_id > community.community_id
+Ref: registration.student_id > student.student_id
+Ref: registration.event_id > event.event_id
+Ref: notification.student_id > student.student_id
+Ref: notification.event_id > event.event_id
