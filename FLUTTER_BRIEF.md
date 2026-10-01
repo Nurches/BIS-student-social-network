@@ -79,11 +79,13 @@ class Event {
   final String communityName;
   final String title;
   final String description;
+  final String? location;
   final DateTime startsAt;
   final DateTime registrationDeadline;
   final int participantLimit;
   final int freePlaces;          // server-computed, never computed on the client
   final RegistrationState myState; // none | registered | waitingList
+  final int? waitingPosition;      // set only for waitingList
 }
 
 enum RegistrationState { none, registered, waitingList }
@@ -95,39 +97,68 @@ enum RegistrationState { none, registered, waitingList }
 
 ## 5. API contract
 
-Base URL from `--dart-define=API_BASE_URL`. All authed calls send `Authorization: Bearer <jwt>`.
+Verified against `docs/api.md` on 2026-10-01. Where `api.md` defines something, it wins and the client follows it. Where `api.md` is silent, the shape below is what the client implements, marked **TO CONFIRM** and with a `// TODO(confirm):` in code. These items must be added to `api.md` by the server owner.
 
-**TO CONFIRM against `docs/api.md`** — these four endpoints are the agreed set; match exact paths and field names to that file before writing the client, and fix this brief if they differ.
+Base URL from `--dart-define=API_BASE_URL`, including the `/api/v1` prefix. All calls except `/auth/*` send `Authorization: Bearer <jwt>`. JSON fields are `snake_case`, as in `api.md` and `schema.sql`.
 
 ### POST /auth/login
+`api.md`: JWT valid 24 h; 5 failed attempts within 10 min → locked for 15 min, `423 Locked`.
 ```json
 // request
 { "email": "student@kbtu.kz", "password": "..." }
-// 200
-{ "token": "<jwt>", "student": { "id": 12, "email": "...", "fullName": "..." } }
+// 200 — TO CONFIRM, body not in api.md
+{ "token": "<jwt>", "student": { "student_id": 12, "email": "...", "full_name": "..." } }
 // 401 wrong credentials
-// 423 account locked (5 failed attempts, 15 min) — see NFR-02
+// 423 locked — TO CONFIRM: a `retry_after_minutes` field, so the app can show minutes left (NFR-02)
 ```
 
-### GET /feed?limit=20&cursor=<opaque>
-Events from the communities the student follows, newest first.
+### GET /feed?limit=20&cursor=<event_id>
+`api.md`: published events from followed communities whose deadline has not passed, **ordered by deadline**.
 ```json
-{ "items": [ { /* Event */ } ], "nextCursor": "..." }
+// 200 — TO CONFIRM, envelope not in api.md
+{ "items": [ { /* Event */ } ], "next_cursor": "..." }
 ```
+The client treats the cursor as opaque.
 
-### GET /events/{id}
-One event with fresh `freePlaces` and `myState`.
-
-### POST /events/{id}/registration
+### Event object — TO CONFIRM, not in api.md
 ```json
-// 201 registered
-{ "state": "registered", "freePlaces": 7 }
-// 200 waiting list (event was full)
-{ "state": "waitingList", "waitingPosition": 3 }
-// 409 deadline passed
-{ "error": "DEADLINE_PASSED" }
+{
+  "event_id": 1, "community_id": 1, "community_name": "IT Club",
+  "title": "...", "description": "...", "location": "Block C, room 301",
+  "starts_at": "2026-10-08T10:00:00+05:00",
+  "registration_deadline": "2026-10-04T23:59:00+05:00",
+  "participant_limit": 30,
+  "free_places": 27,               // server-computed
+  "my_status": "confirmed",        // null | confirmed | waiting_list
+  "waiting_position": null         // set when my_status = waiting_list
+}
 ```
-`DELETE /events/{id}/registration` cancels and returns the new `freePlaces`.
+Timestamps must carry a UTC offset: `schema.sql` uses `TIMESTAMP` without time zone.
+
+### GET /events/{id} — TO CONFIRM, not in api.md
+One Event object with fresh `free_places` and `my_status`. Required by section 9 ("Stale list"). `404` if not published.
+
+### POST /events/{id}/registrations
+Per `api.md`:
+
+| Code | Body | Client state |
+|---|---|---|
+| 201 | `{ "status": "confirmed", "registration_id": 42 }` | registered |
+| 200 | `{ "status": "waiting_list", "position": 3 }` | waiting list |
+| 409 | `{ "error": "already_registered" }` | already registered |
+| 410 | `{ "error": "deadline_passed" }` | closed |
+| 401 | `{ "error": "unauthorized" }` | log out |
+
+The response carries no `free_places`; the client re-fetches the event afterwards.
+
+### DELETE /events/{id}/registrations
+Cancels the student's own registration. The oldest waiting-list entry is promoted in the same transaction. Response body not defined in `api.md` — the client ignores it and re-fetches the event.
+
+### GET /health — TO CONFIRM, not in api.md
+Cheap unauthenticated `200 { "status": "ok" }`. The reachability check in section 9 depends on it.
+
+### Device token for push — TO CONFIRM, not in api.md or schema.sql
+FR-01 needs the server to know each student's FCM token. Proposed: `PUT /me/device-token { "token": "..." }`, and a `device_token` table (or column). Without it no push can be sent.
 
 Server does the limit check inside a transaction with `SELECT ... FOR UPDATE`, so two simultaneous taps cannot oversell the last place. The client just renders whatever comes back.
 
@@ -236,6 +267,8 @@ Stop after each step and let the owner check it. Do not scaffold all seven at on
 ## 13. Open questions
 
 - State management library — Riverpod assumed.
-- Exact endpoint paths and field names — verify against `docs/api.md`.
+- Endpoints and bodies marked TO CONFIRM in section 5 — to be added to `docs/api.md`.
+- Re-registration after cancelling: `DELETE` keeps the row with `status = 'cancelled'`, so a second `INSERT` hits `uq_registration`. The server should reuse the row (UPDATE) instead of inserting.
+- Feed pagination: ordered by deadline but the cursor is an `event_id`. Keyset pagination needs `(registration_deadline, event_id)` as the cursor.
 - Whether the demo target is Android APK or Flutter Web; build for both if cheap.
 - Admin publishing flow: web only for the demo, or a hidden screen in the app.
