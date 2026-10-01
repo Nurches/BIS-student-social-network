@@ -1,18 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../config/app_config.dart';
 import 'api_exception.dart';
 
 typedef TokenReader = Future<String?> Function();
 
 class ApiResponse {
-  const ApiResponse(this.statusCode, this.body);
+  const ApiResponse(this.statusCode, this.body, {this.headers = const {}});
 
   final int statusCode;
+
+  /// Response headers with lower-case names.
+  final Map<String, String> headers;
 
   /// Decoded JSON, or null for an empty body.
   final Object? body;
@@ -29,29 +30,40 @@ class ApiResponse {
 
 /// Thin JSON-over-HTTP client for docs/api.md.
 ///
-/// Throws [ApiException] for transport failures, 401 and 5xx. Every other
-/// status code is returned so that repositories can map business answers
-/// (409, 410, ...) to domain values.
+/// Throws [ApiException] for transport failures, 5xx and, on authenticated
+/// calls, 401. Every other status code is returned so that repositories can
+/// map business answers (409, 410, ...) to domain values.
+///
+/// Calls with `authenticated: false` (`/auth/*`) send no token, and their 401
+/// means wrong credentials, so it is returned like any other answer.
 class ApiClient {
   ApiClient({
     required String baseUrl,
     required TokenReader readToken,
+    Future<void> Function()? onUnauthorized,
     http.Client? httpClient,
     this.timeout = const Duration(seconds: 10),
   }) : _baseUrl = baseUrl,
        _readToken = readToken,
+       _onUnauthorized = onUnauthorized,
        _http = httpClient ?? http.Client();
 
   final String _baseUrl;
   final TokenReader _readToken;
+
+  /// Called when an authenticated call gets 401: the session is over.
+  final Future<void> Function()? _onUnauthorized;
   final http.Client _http;
   final Duration timeout;
 
   Future<ApiResponse> get(String path, {Map<String, String>? query}) =>
       _send('GET', path, query: query);
 
-  Future<ApiResponse> post(String path, {Object? body}) =>
-      _send('POST', path, body: body);
+  Future<ApiResponse> post(
+    String path, {
+    Object? body,
+    bool authenticated = true,
+  }) => _send('POST', path, body: body, authenticated: authenticated);
 
   Future<ApiResponse> delete(String path) => _send('DELETE', path);
 
@@ -60,13 +72,16 @@ class ApiClient {
     String path, {
     Map<String, String>? query,
     Object? body,
+    bool authenticated = true,
   }) async {
     final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: query);
     final request = http.Request(method, uri)
       ..headers['Accept'] = 'application/json';
 
-    final token = await _readToken();
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    if (authenticated) {
+      final token = await _readToken();
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    }
     if (body != null) {
       request.headers['Content-Type'] = 'application/json';
       request.body = jsonEncode(body);
@@ -83,7 +98,10 @@ class ApiClient {
     }
 
     final status = response.statusCode;
-    if (status == 401) throw const UnauthorizedException();
+    if (status == 401 && authenticated) {
+      await _onUnauthorized?.call();
+      throw const UnauthorizedException();
+    }
     if (status >= 500) {
       throw UnexpectedResponseException(
         'Server error $status',
@@ -91,7 +109,7 @@ class ApiClient {
       );
     }
 
-    return ApiResponse(status, _decode(response));
+    return ApiResponse(status, _decode(response), headers: response.headers);
   }
 
   Object? _decode(http.Response response) {
@@ -105,12 +123,3 @@ class ApiClient {
     }
   }
 }
-
-final apiClientProvider = Provider<ApiClient>((ref) {
-  final config = ref.watch(appConfigProvider);
-  return ApiClient(
-    baseUrl: config.apiBaseUrl,
-    // Wired to secure token storage in step 3 (login).
-    readToken: () async => null,
-  );
-});

@@ -19,6 +19,12 @@ flutter run --dart-define=API_BASE_URL=https://<host>/api/v1
 | `API_BASE_URL` | empty | Server prefix including `/api/v1` |
 | `USE_MOCK_API` | `true` when `API_BASE_URL` is empty | Force mock repositories |
 
+## Demo accounts (mock mode)
+
+Any student seeded in `docs/schema.sql` (e.g. `nurassyl@kbtu.kz`) with the
+password `qatys2026`. Five wrong passwords lock the account for 15 minutes,
+as on the server (NFR-02); restart the app to reset.
+
 ## Structure
 
 ```

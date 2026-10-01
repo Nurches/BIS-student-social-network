@@ -1,7 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
-import '../../../core/network/api_client.dart';
+import '../../../core/network/api_client_provider.dart';
 import '../domain/event_repository.dart';
 import 'http_event_repository.dart';
 import 'mock_event_repository.dart';
