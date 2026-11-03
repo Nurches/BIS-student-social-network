@@ -43,8 +43,8 @@ places are left.
 
 ```
 /docs      requirements, ER diagram, database schema, API specification, test cases
-/server    FastAPI application
-/client    Flutter application
+/server    FastAPI application (server/README.md)
+/qatys     Flutter application (qatys/README.md)
 ```
 
 | File | Content |
@@ -55,31 +55,38 @@ places are left.
 | `docs/api.md` | API specification |
 | `docs/roles_and_architecture.xlsx` | role matrix, architecture components, security decisions |
 | `docs/test_cases_and_rtm.xlsx` | test cases, traceability matrix, analytics metrics |
+| `docs/migrations/` | upgrades of an existing database (002: contract fixes) |
+| `docs/roadmap.md` | plan to the Week 15 defence |
+| `docs/project-status.md` | where the project is now, milestone log |
+| `docs/deployment.md` | run the whole system from zero, deploy to Render + Neon |
+| `docs/network-map.md` | phone → API → database, the push path, failures |
 
 ## How to run the server
 
 ```bash
 cd server
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env          # set DATABASE_URL and JWT_SECRET
-psql "$DATABASE_URL" -f ../docs/schema.sql
+docker compose up -d db                       # PostgreSQL 16 on localhost:5432
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env && python seed.py --yes  # tables + demo data
 uvicorn app.main:app --reload
 ```
 
-Interactive API documentation: http://localhost:8000/docs
+Interactive API documentation: http://localhost:8000/docs · admin page: http://localhost:8000/admin.
+Details, tests and deployment: `server/README.md`, `docs/deployment.md`.
 
 ## Requirements and where they are enforced
 
 | ID | Requirement | Enforced in |
 |---|---|---|
-| FR-01 | Notify subscribers when an event is published | `services/notifications.py` |
-| FR-02 | Reject an announcement with a past deadline | `POST /communities/{id}/events` |
-| FR-03 | Reject registration over the limit, offer the waiting list | `POST /events/{id}/registrations` |
-| NFR-01 | 95% of feed loads under 2 s at 1000 concurrent users | feed query + indexes |
+| FR-01 | Notify subscribers when an event is published | `server/app/services/events.py` (`create_publish_notifications`), `services/push.py`; app: `qatys/lib/features/push/` |
+| FR-02 | Reject an announcement with a past deadline | `services/events.py` (`publish`); app renders a passed deadline as closed |
+| FR-03 | Reject registration over the limit, offer the waiting list | `services/events.py` (`register`, `SELECT ... FOR UPDATE`) |
+| NFR-01 | 95% of feed loads under 2 s at 1000 concurrent users | one-query feed + keyset cursor + `idx_event_feed`; app: cache-first feed; `server/loadtest/` |
 | NFR-02 | bcrypt cost 12, lockout after 5 failed logins | `services/auth.py` |
-| BR-01 | University email only; confirmed admins publish | registration and role check |
+| BR-01 | University email only; confirmed admins publish | `services/auth.py`, `services/events.py` (`publish`) |
 
 ## Status
 
-Week 4 — requirements and design. Implementation starts in Week 5.
+Week 10 — the main process works end to end on a real server and database (milestones
+M0–M6 of `docs/roadmap.md` implemented). See `docs/project-status.md`.
