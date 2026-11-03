@@ -85,6 +85,9 @@ class FcmPushSender:
                     "priority": "high",
                     "notification": {"channel_id": ANDROID_CHANNEL_ID},
                 },
+                # iPhone: without a sound iOS delivers the alert silently;
+                # with it, a muted phone still vibrates (per its settings).
+                "apns": {"payload": {"aps": {"sound": "default"}}},
             }
         }
         try:

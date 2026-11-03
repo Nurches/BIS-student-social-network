@@ -202,6 +202,7 @@ twice. `sent_at` is set when FCM accepts the message.
 community name and deadline) and `data: { "type": "event_published", "event_id": "17" }`.
 The app opens `GET /events/{event_id}` when the notification is tapped. Android channel id:
 `events_high` (high importance, so it vibrates on a phone in silent mode).
+iPhone: `apns.payload.aps.sound = "default"`, so the alert is not delivered silently.
 
 ## POST /events/{id}/registrations
 

@@ -3,3 +3,7 @@
 
 # Office lock files
 ~$*
+
+# Local AI-agent tooling (Neon skills), not part of the project
+.claude/
+skills-lock.json
