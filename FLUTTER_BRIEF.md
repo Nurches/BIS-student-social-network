@@ -52,7 +52,7 @@ Out of scope for now: creating events from the app (admin side is web/API for th
 
 **Delivery for the demo:** no App Store. Android APK published via GitHub Releases, or a Flutter Web build on free hosting. Server on Render / Railway / Fly.io. The team has an Apple developer account, so TestFlight is an optional bonus, not the main path.
 
-**State management: TO CONFIRM.** Default to `flutter_riverpod` unless the team says otherwise. Keep business logic out of widgets either way.
+**State management:** `flutter_riverpod` (fixed in `docs/roadmap.md` §3). Keep business logic out of widgets.
 
 ---
 
@@ -97,68 +97,53 @@ enum RegistrationState { none, registered, waitingList }
 
 ## 5. API contract
 
-Verified against `docs/api.md` on 2026-10-01. Where `api.md` defines something, it wins and the client follows it. Where `api.md` is silent, the shape below is what the client implements, marked **TO CONFIRM** and with a `// TODO(confirm):` in code. These items must be added to `api.md` by the server owner.
+`docs/api.md` v0.2 (2026-11-03) is the contract; it now defines every endpoint and body the client uses, so nothing in this section is **TO CONFIRM** any more. This is the client's summary of it — if the two ever differ, `api.md` wins.
 
-Base URL from `--dart-define=API_BASE_URL`, including the `/api/v1` prefix. All calls except `/auth/*` send `Authorization: Bearer <jwt>`. JSON fields are `snake_case`, as in `api.md` and `schema.sql`.
+Base URL from `--dart-define=API_BASE_URL`, including the `/api/v1` prefix. All calls except `/health` and `/auth/*` send `Authorization: Bearer <jwt>`. JSON fields are `snake_case`, as in `api.md` and `schema.sql`. Every error body is `{ "error": "<code>" }`. Every timestamp carries a UTC offset; the client converts it with `toLocal()`.
 
-### POST /auth/login
-`api.md`: JWT valid 24 h; 5 failed attempts within 10 min → locked for 15 min, `423 Locked`.
-```json
-// request
-{ "email": "student@kbtu.kz", "password": "..." }
-// 200 — TO CONFIRM, body not in api.md
-{ "token": "<jwt>", "student": { "student_id": 12, "email": "...", "full_name": "..." } }
-// 401 wrong credentials
-// 423 locked — TO CONFIRM: a `retry_after_minutes` field, so the app can show minutes left (NFR-02)
-```
+| Call | Client handling |
+|---|---|
+| `GET /health` | `200 { "status": "ok" }` is the only "server reachable" signal (section 9); `503` means unreachable |
+| `POST /auth/login` | `200 { token, student: { student_id, email, full_name } }` → session; `401` wrong credentials; `422` not a university email (BR-01); `423 { retry_after_minutes }` + `Retry-After` → lockout with minutes left (NFR-02) |
+| `GET /feed?limit=20&cursor=` | `{ items: [Event], next_cursor }`; `next_cursor` is opaque and `null` on the last page |
+| `GET /events/{id}` | fresh Event; `404 event_not_found` |
+| `POST /events/{id}/registrations` | see table below |
+| `DELETE /events/{id}/registrations` | `200 { "status": "cancelled" }`; `404 not_registered`; `410 event_started`; the client re-fetches the event |
+| `PUT /me/device-token` | `{ token, platform: "android" }` after every login and on token refresh → `204` (step 6) |
+| `DELETE /me/device-token` | `{ token }` on logout → `204` (step 6) |
 
-### GET /feed?limit=20&cursor=<event_id>
-`api.md`: published events from followed communities whose deadline has not passed, **ordered by deadline**.
-```json
-// 200 — TO CONFIRM, envelope not in api.md
-{ "items": [ { /* Event */ } ], "next_cursor": "..." }
-```
-The client treats the cursor as opaque.
+**Lockout (NFR-02).** Wrong passwords 1–5 answer `401`; the 5th sets the 15-minute lock, so the 6th attempt is the first `423` — even with the correct password.
 
-### Event object — TO CONFIRM, not in api.md
+### Event object
 ```json
 {
   "event_id": 1, "community_id": 1, "community_name": "IT Club",
   "title": "...", "description": "...", "location": "Block C, room 301",
-  "starts_at": "2026-10-08T10:00:00+05:00",
-  "registration_deadline": "2026-10-04T23:59:00+05:00",
+  "starts_at": "2026-11-20T10:00:00+05:00",
+  "registration_deadline": "2026-11-16T23:59:00+05:00",
   "participant_limit": 30,
-  "free_places": 27,               // server-computed
+  "free_places": 27,               // server-computed, never below 0
   "my_status": "confirmed",        // null | confirmed | waiting_list
-  "waiting_position": null         // set when my_status = waiting_list
+  "waiting_position": null         // 1-based, set when my_status = waiting_list
 }
 ```
-Timestamps must carry a UTC offset: `schema.sql` uses `TIMESTAMP` without time zone.
-
-### GET /events/{id} — TO CONFIRM, not in api.md
-One Event object with fresh `free_places` and `my_status`. Required by section 9 ("Stale list"). `404` if not published.
+`description` and `location` may be `null`. `GET /events/{id}` also returns events whose deadline has passed — render them as closed (FR-02).
 
 ### POST /events/{id}/registrations
-Per `api.md`:
 
 | Code | Body | Client state |
 |---|---|---|
 | 201 | `{ "status": "confirmed", "registration_id": 42 }` | registered |
 | 200 | `{ "status": "waiting_list", "position": 3 }` | waiting list |
+| 404 | `{ "error": "event_not_found" }` | event gone |
 | 409 | `{ "error": "already_registered" }` | already registered |
 | 410 | `{ "error": "deadline_passed" }` | closed |
 | 401 | `{ "error": "unauthorized" }` | log out |
 
-The response carries no `free_places`; the client re-fetches the event afterwards.
+The response carries no `free_places`; the client re-fetches the event afterwards. Registering again after a cancel is a normal `201` / `200`.
 
-### DELETE /events/{id}/registrations
-Cancels the student's own registration. The oldest waiting-list entry is promoted in the same transaction. Response body not defined in `api.md` — the client ignores it and re-fetches the event.
-
-### GET /health — TO CONFIRM, not in api.md
-Cheap unauthenticated `200 { "status": "ok" }`. The reachability check in section 9 depends on it.
-
-### Device token for push — TO CONFIRM, not in api.md or schema.sql
-FR-01 needs the server to know each student's FCM token. Proposed: `PUT /me/device-token { "token": "..." }`, and a `device_token` table (or column). Without it no push can be sent.
+### Push payload (step 6)
+`data: { "type": "event_published" | "waiting_list_promoted", "event_id": "17" }` — a tap opens the detail screen for `event_id`. Android channel id `events_high`, high importance.
 
 Server does the limit check inside a transaction with `SELECT ... FOR UPDATE`, so two simultaneous taps cannot oversell the last place. The client just renders whatever comes back.
 
@@ -266,9 +251,6 @@ Stop after each step and let the owner check it. Do not scaffold all seven at on
 
 ## 13. Open questions
 
-- State management library — Riverpod assumed.
-- Endpoints and bodies marked TO CONFIRM in section 5 — to be added to `docs/api.md`.
-- Re-registration after cancelling: `DELETE` keeps the row with `status = 'cancelled'`, so a second `INSERT` hits `uq_registration`. The server should reuse the row (UPDATE) instead of inserting.
-- Feed pagination: ordered by deadline but the cursor is an `event_id`. Keyset pagination needs `(registration_deadline, event_id)` as the cursor.
-- Whether the demo target is Android APK or Flutter Web; build for both if cheap.
-- Admin publishing flow: web only for the demo, or a hidden screen in the app.
+Resolved on 2026-11-03 in `docs/roadmap.md` §3 and `docs/api.md` v0.2: state management (Riverpod), the missing endpoints and bodies, re-registration after cancel (the server UPDATEs the row), the feed cursor (`(registration_deadline, event_id)`), the demo platform (Android APK first, Web only if cheap) and admin publishing (Swagger UI, no screen in the app).
+
+Nothing open for the client at the moment.
