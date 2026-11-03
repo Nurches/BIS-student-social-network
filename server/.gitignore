@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+loadtest/result*.csv
+# Firebase service account keys: environment variables only, never git.
+*firebase-adminsdk*.json
+service-account*.json

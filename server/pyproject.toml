@@ -1,0 +1,25 @@
+[project]
+name = "qatys-api"
+version = "0.2.0"
+description = "FastAPI server of the Qatys student social network (docs/api.md)"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "S101",   # assert is how pytest works
+    "B008",   # FastAPI dependencies are declared as default arguments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]  # test passwords and secrets are not real
+"seed.py" = ["S105"]
+"loadtest/*" = ["S311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
