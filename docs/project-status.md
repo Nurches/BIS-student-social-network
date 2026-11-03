@@ -15,8 +15,10 @@
 | Main process | Works end to end on a real server and a real PostgreSQL: publish → notification rows → register / waiting list / cancel → promotion. Shown over HTTP and with the app's real network code |
 | Tests | **157 automated tests, all passing:** 66 server (pytest, real PostgreSQL 16), 90 app (Flutter), 1 app ↔ live server contract test |
 | Quality gates | `ruff` and `flutter analyze`: 0 issues |
-| NFR-01 | 1000 simulated users, 27 050 requests, 0 errors, **p95 feed = 30 ms** (target 2 000 ms). Measured on a laptop, not on the free tier yet |
-| What is left | Steps that need accounts and hardware, all owner-side (section 6): Neon + Render deploy, Firebase project, real phones, signed APK on GitHub Releases |
+| NFR-01 | Laptop: 1000 users, 0 errors, p95 30 ms. **Render free tier (0.1 CPU): meets the target up to ~60 simulated users (p95 1.1 s), saturates at ~20 requests/s** — see section 3 |
+| Live system | **Deployed:** API https://qatys-api.onrender.com (Render, Frankfurt), database on Neon (Frankfurt). **A real push reached a real iPhone** and opened the event |
+| What is left | Install on the other demo iPhones, team handover (section 6) |
+| Platform decision | **Demo on iPhone only, no Android APK** (owner's decision, 3 Nov). Changes roadmap §3 "Android APK is primary" and the M6 release — **needs the PM's agreement** |
 
 The Week 10 promises to the instructor are kept: the **race test for the last place** passes
 (also with 8 students for 1 place, 30 runs in a row), and **duplicate notifications** are
@@ -29,12 +31,12 @@ impossible by a database constraint.
 | Milestone | Status | Proof |
 |---|---|---|
 | M0 Contract fix | ✅ Done | `api.md` v0.2, `schema.sql` v2, migration 002; checked on PostgreSQL 16 |
-| M1 Server skeleton, auth, deploy | ✅ Code + tests. ⏳ Deploy needs the owner's Render/Neon accounts | `/health`, register, login + lockout, JWT, race test |
+| M1 Server skeleton, auth, deploy | ✅ Done, deployed | https://qatys-api.onrender.com/api/v1/health; Swagger at `/docs` |
 | M2 Live feed | ✅ Done | Server feed with keyset cursor (45-event test); app feed with offline cache |
 | M3 Detail and registration | ✅ Done | All four button states; register → cancel → register; waiting-list promotion |
-| M4 Push | ✅ Code + tests. ⏳ Needs the Firebase project and a real phone | Server FCM sender, app permission prompt, TC-01 tap → event |
+| M4 Push | ✅ Done on iPhone (Firebase + APNs) | Admin publish → push on a silent iPhone → tap opens the event |
 | M5 Reliability | ✅ Done | Offline queue, `/health` reachability, no endless spinners, full logout cleanup |
-| M6 Quality, security, release | ✅ Security pass, load test, docs. ⏳ Signed APK build and GitHub Release | `deployment.md`, `network-map.md`, security tests |
+| M6 Quality, security, release | ✅ Security pass, load test on Render, docs. Release: iPhone builds instead of the APK (pending PM agreement) | `deployment.md`, `network-map.md`, security tests |
 | M7 Stretch | 🟡 Admin web page done (`/admin`); Flutter Web and analytics not started | — |
 
 ---
@@ -43,12 +45,29 @@ impossible by a database constraint.
 
 | ID | Requirement | Status | Where it is proven |
 |---|---|---|---|
-| FR-01 | Notify subscribers on publication | ✅ Server + app done; ⏳ real push after Firebase setup | `test_publish.py`; app `push_test.dart` (TC-01) |
+| FR-01 | Notify subscribers on publication | ✅ Real push delivered to an iPhone from the deployed server | `test_publish.py`; app `push_test.dart` (TC-01) |
 | FR-02 | Reject a past deadline | ✅ 422 `deadline_in_the_past`; app shows "Registration closed" | `test_publish.py`; `event_detail_screen_test.dart` |
 | FR-03 | Limit + waiting list | ✅ Row lock, waiting list, promotion on cancel | `test_registrations.py`, `test_race.py` |
-| NFR-01 | 95% of feed loads under 2 s | ✅ p95 30 ms locally at 1000 users; app shows the saved feed instantly | `server/loadtest/`; `feed_screen_test.dart` |
+| NFR-01 | 95% of feed loads under 2 s | 🟡 Code meets it (laptop: 1000 users, p95 30 ms). Free hosting does not at 1000 users (table below). The app shows the saved feed instantly in any case | `server/loadtest/`; `feed_screen_test.dart` |
 | NFR-02 | bcrypt 12, lockout | ✅ 6th attempt refused for 15 min (TC-06) | `test_auth.py`; app login tests |
 | BR-01 | University email, confirmed admins only | ✅ 422 for other domains, 403 `not_a_confirmed_admin` | `test_auth.py`, `test_publish.py` |
+
+### NFR-01 load test on the deployed server (3 November 2026)
+
+Locust from Almaty against https://qatys-api.onrender.com; each simulated user opens the feed
+or an event every 1–3 s (far more often than a real student, roughly once a minute).
+
+| Simulated users | Requests/s | p95 feed | Errors | Target met |
+|---|---|---|---|---|
+| 25 | 6 | 0.5 s | 0% | ✅ |
+| 60 | 12 | 1.1 s | 0% | ✅ |
+| 200 | 20 (ceiling) | 8.5 s | 8% (502 from Render's proxy) | ❌ |
+
+Cause: the free Render instance has 0.1 CPU; the same code on a laptop served 450 requests/s
+at 1000 users with p95 30 ms. Scaling path: a paid instance (0.5 CPU and more, several
+instances behind Render's load balancer; the code keeps no state in memory except the login
+rate limit), then caching of the feed query. For the demo (3 phones) the free tier is far
+more than enough.
 
 ### Test cases (for Madina's run sheet)
 
@@ -147,12 +166,10 @@ by luck.
 
 | # | Task | Who | Time | Instructions |
 |---|---|---|---|---|
-| 1 | Create the Neon database, run `seed.py` | Nurassyl | 15 min | `deployment.md` §1 |
-| 2 | Create the Firebase project, app `kz.kbtu.qatys`, service account key | Nurassyl | 20 min | `deployment.md` §2 |
-| 3 | Deploy on Render with the blueprint | Nurassyl | 15 min | `deployment.md` §3 |
-| 4 | Build the signed APK, publish on GitHub Releases | Nurassyl | 20 min | `deployment.md` §4 |
-| 5 | Real-phone check: silent mode vibrates, tap opens the event | Nurassyl + Madina | 15 min | `deployment.md` §5 |
-| 6 | Re-run the load test against Render; record the number honestly | Nurassyl | 10 min | `server/README.md` |
+| 1–3 | Neon database, Firebase (Android + iOS + APNs key), Render deploy | Nurassyl | — | ✅ done 3 Nov |
+| 4 | ~~Signed APK on GitHub Releases~~ — dropped: demo on iPhone only (needs PM agreement) | — | — | — |
+| 5 | Install on the other two demo iPhones (cable from the owner's Mac, or TestFlight) and run the full demo script | Nurassyl + Madina | 30 min | `qatys/README.md` |
+| 6 | Load test against Render | Nurassyl | — | ✅ done 3 Nov (section 3) |
 | 7 | Run the system from zero on another laptop (bus factor) | Laila or Akbota | 1 h | `deployment.md` |
 | 8 | TC-01…TC-08 on the installed APK, RTM → Pass with dates | Madina | — | section 3 above |
 | 9 | Integrity queries against the live DB (`docs/data_checks.sql`) | Laila | — | roadmap §6 |
@@ -165,9 +182,9 @@ by luck.
 
 | Risk / limitation | Impact | Response |
 |---|---|---|
-| Deploy and Firebase not done yet | High until done | Tasks 1–5 above, about 1.5 hours in total |
-| Native Android changes are not yet checked by a build | Medium | The first `flutter build apk` (task 4) checks them; fix within the same session if needed |
-| NFR-01 measured on a laptop with demo-size data | Low | Task 6; explain the scaling path (indexes, more instances) |
+| Android is configured but never built (APK dropped) | Low for the demo; expect the question "the target user has a cheap Android phone — why an iPhone demo?" | Answer: one Flutter code base, Android build configured; the demo uses the team's devices. Android pushes untested |
+| Three iPhones are needed for the demo script (phones A, B, C) | Medium | Install on teammates' iPhones by cable this week, or start TestFlight early (review takes ~1 day) |
+| Free hosting meets NFR-01 only up to ~60 heavy simulated users | Medium (grading question) | Measured and explained honestly (section 3); scaling path: paid instance, more instances, feed cache |
 | Render free tier sleeps (30–60 s first request) | Medium | Warm-up step in the demo script |
 | Push library deprecates the token API (still works) | Low | After Week 15: move to Firebase Installation IDs |
 | Two defaults not yet confirmed by the team: cancelling after the event started is refused; any published event can be opened by link | Low | Confirm or change in one line of `api.md` |
@@ -176,6 +193,12 @@ by luck.
 ---
 
 ## 8. Milestone log
+
+### Live deploy — 3 November 2026 (Week 10)
+
+- API on Render (Frankfurt) and PostgreSQL on Neon (Frankfurt), seeded; `/health`, Swagger and `/admin` reachable; feed answers in 0.33–0.43 s from Kazakhstan.
+- iOS set up for push (bundle `kz.kbtu.qatys`, APNs key in Firebase); release build runs on an iPhone 13.
+- **First real push:** published from `/admin` → delivered to the iPhone → tap opened the event.
 
 ### M1–M6 — implemented 3 November 2026 (Week 10)
 

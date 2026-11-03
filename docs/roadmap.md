@@ -223,7 +223,7 @@ Fallback order if something fails live: second phone → recorded video of the s
 | NFR-01 (1000 users) cannot be proven on a free tier | Low | Measure and report honestly; explain the scaling path (indexes, caching, paid tier) |
 | Email verification is not really sent | Low | Documented limitation; BR-01 domain check still enforced |
 | Render free Postgres is deleted 30 days after creation | High if used | Database on Neon instead (`docs/deployment.md`) |
-| NFR-01 measured on a laptop (1000 users, p95 30 ms), not on the free tier | Low | Re-run `server/loadtest` against Render before the defence and report that number |
+| NFR-01 on the free tier: target met up to ~60 heavy simulated users, ceiling ~20 requests/s (0.1 CPU); laptop: 1000 users, p95 30 ms | Medium | Reported honestly in `project-status.md` §3; scaling path: paid instance, more instances, feed cache |
 | `firebase_messaging` 17 deprecates the registration-token API (still works) | Low | After Week 15: move app and server to Firebase Installation IDs |
 | Login rate limit and FCM sender live in one server process | Low | Enough for one Render instance; several instances would need Redis |
 
