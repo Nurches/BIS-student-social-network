@@ -73,15 +73,15 @@ void main() {
     await repository.register(6);
     repository.takePlaceByAnotherStudent(6); // full, goes to the waiting list
 
-    await repository.cancelRegistration(6);
+    expect(await repository.cancelRegistration(6), isA<CancelSucceeded>());
     final event = await repository.fetchEvent(6);
 
     expect(event.myState, RegistrationState.none);
     expect(event.freePlaces, 0, reason: 'the waiting student took the place');
   });
 
-  test('cancelling without a registration throws', () {
-    expect(repository.cancelRegistration(1), throwsA(isA<NotFoundException>()));
+  test('cancelling without a registration is a calm answer', () async {
+    expect(await repository.cancelRegistration(1), isA<CancelNotRegistered>());
   });
 
   test('unknown event throws', () {

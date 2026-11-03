@@ -42,11 +42,11 @@ void main() {
   });
 
   test('locks for 15 minutes after 5 failed attempts (NFR-02)', () async {
-    for (var i = 0; i < 4; i++) {
+    for (var i = 0; i < 5; i++) {
       expect(await login('nope'), isA<LoginInvalidCredentials>());
     }
-    final fifth = await login('nope');
-    expect((fifth as LoginLocked).retryAfter, const Duration(minutes: 15));
+    final sixth = await login('nope');
+    expect((sixth as LoginLocked).retryAfter, const Duration(minutes: 15));
 
     now = now.add(const Duration(minutes: 5));
     final whileLocked = await login(MockAuthRepository.demoPassword);
@@ -59,12 +59,27 @@ void main() {
     expect(await login(MockAuthRepository.demoPassword), isA<LoginSucceeded>());
   });
 
-  test('failures older than 10 minutes do not count', () async {
+  test('failures after the 10-minute window start a new one', () async {
     for (var i = 0; i < 4; i++) {
       await login('nope');
     }
     now = now.add(const Duration(minutes: 10));
 
-    expect(await login('nope'), isA<LoginInvalidCredentials>());
+    for (var i = 0; i < 4; i++) {
+      expect(await login('nope'), isA<LoginInvalidCredentials>());
+    }
+    expect(await login(MockAuthRepository.demoPassword), isA<LoginSucceeded>());
+  });
+
+  test('a successful login resets the failure count', () async {
+    for (var i = 0; i < 4; i++) {
+      await login('nope');
+    }
+    expect(await login(MockAuthRepository.demoPassword), isA<LoginSucceeded>());
+
+    for (var i = 0; i < 4; i++) {
+      expect(await login('nope'), isA<LoginInvalidCredentials>());
+    }
+    expect(await login(MockAuthRepository.demoPassword), isA<LoginSucceeded>());
   });
 }

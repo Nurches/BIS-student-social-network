@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:qatys/core/storage/local_store.dart';
 import 'package:qatys/features/auth/data/auth_providers.dart';
 import 'package:qatys/features/auth/data/mock_auth_repository.dart';
 import 'package:qatys/features/auth/domain/login_result.dart';
@@ -16,6 +17,7 @@ void main() {
       authRepositoryProvider.overrideWithValue(
         MockAuthRepository(latency: Duration.zero),
       ),
+      localStoreProvider.overrideWithValue(InMemoryStore()),
     ],
   );
 

@@ -42,9 +42,9 @@ class HttpAuthRepository implements AuthRepository {
     }
   }
 
-  // TODO(confirm): docs/api.md says only "423 Locked". Accepts either a
-  // `retry_after_minutes` body field or the standard `Retry-After` header
-  // (seconds), so the app can show the minutes left (NFR-02).
+  // docs/api.md: 423 carries a `retry_after_minutes` body field and the
+  // standard `Retry-After` header (seconds); the body wins, the header is the
+  // fallback, so the app can show the minutes left (NFR-02).
   Duration? _retryAfter(ApiResponse response) {
     final body = response.body;
     if (body is Map<String, Object?>) {

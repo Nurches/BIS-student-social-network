@@ -1,8 +1,8 @@
 import '../domain/session.dart';
 import '../domain/student.dart';
 
-// TODO(confirm): docs/api.md does not define the login response body.
-// Expected: `{ "token": "<jwt>", "student": { "student_id", "email", "full_name" } }`.
+/// Body of `200` from `POST /auth/login` (docs/api.md):
+/// `{ "token": "<jwt>", "student": { "student_id", "email", "full_name" } }`.
 Session sessionFromJson(Map<String, Object?> json) {
   final student = json['student'];
   if (student is! Map<String, Object?>) {

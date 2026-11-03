@@ -10,6 +10,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     baseUrl: config.apiBaseUrl,
     // Read lazily on every call: the session can change while the client lives.
     readToken: () async => ref.read(sessionControllerProvider).value?.token,
-    onUnauthorized: () => ref.read(sessionControllerProvider.notifier).logout(),
+    onUnauthorized: () =>
+        ref.read(sessionControllerProvider.notifier).logout(reachServer: false),
   );
 });

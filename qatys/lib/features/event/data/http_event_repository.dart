@@ -21,8 +21,6 @@ class HttpEventRepository implements EventRepository {
     return _parse(() => feedPageFromJson(response.json));
   }
 
-  // TODO(confirm): GET /events/{id} is required by the brief (fresh free
-  // places on the detail screen) but is not yet listed in docs/api.md.
   @override
   Future<Event> fetchEvent(int id) async {
     final response = await _api.get('/events/$id');
@@ -46,17 +44,24 @@ class HttpEventRepository implements EventRepository {
     };
   }
 
-  // TODO(confirm): the response body of DELETE is not defined in
-  // docs/api.md, so it is ignored; the caller re-fetches the event.
+  // docs/api.md: 200 `{ "status": "cancelled" }`. The body says nothing the
+  // caller needs, so it is ignored; the caller re-fetches the event.
   @override
-  Future<void> cancelRegistration(int eventId) async {
+  Future<CancelResult> cancelRegistration(int eventId) async {
     final response = await _api.delete('/events/$eventId/registrations');
-    if (response.statusCode == 404) {
-      throw NotFoundException('No registration for event $eventId');
-    }
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw _unexpected(response);
-    }
+    return switch (response.statusCode) {
+      200 || 204 => const CancelSucceeded(),
+      404 when _errorCode(response) == 'not_registered' =>
+        const CancelNotRegistered(),
+      404 => throw NotFoundException('Event $eventId not found'),
+      410 => const CancelEventStarted(),
+      _ => throw _unexpected(response),
+    };
+  }
+
+  String? _errorCode(ApiResponse response) {
+    final body = response.body;
+    return body is Map<String, Object?> ? body['error'] as String? : null;
   }
 
   void _expect(ApiResponse response, int status) {

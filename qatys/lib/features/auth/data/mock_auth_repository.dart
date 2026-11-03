@@ -31,7 +31,9 @@ class MockAuthRepository implements AuthRepository {
   final DateTime Function() _now;
   final Duration latency;
 
-  final Map<String, List<DateTime>> _failures = {};
+  /// Open failure window per email, as `failed_logins` and
+  /// `first_failed_login_at` in docs/schema.sql.
+  final Map<String, ({DateTime since, int count})> _failures = {};
   final Map<String, DateTime> _lockedUntil = {};
 
   @override
@@ -52,14 +54,18 @@ class MockAuthRepository implements AuthRepository {
 
     final student = students.where((s) => s.email == key).firstOrNull;
     if (student == null || password != demoPassword) {
-      final recent = (_failures[key] ?? [])
-        ..removeWhere((t) => now.difference(t) >= failureWindow)
-        ..add(now);
-      _failures[key] = recent;
-      if (recent.length >= maxFailedAttempts) {
+      // The first failure opens a 10-minute window; the 5th failure inside it
+      // still answers 401 but sets the lock, so the 6th attempt sees 423.
+      final open = _failures[key];
+      final failures =
+          open != null && now.difference(open.since) < failureWindow
+          ? (since: open.since, count: open.count + 1)
+          : (since: now, count: 1);
+      if (failures.count >= maxFailedAttempts) {
         _failures.remove(key);
         _lockedUntil[key] = now.add(lockDuration);
-        return const LoginLocked(retryAfter: lockDuration);
+      } else {
+        _failures[key] = failures;
       }
       return const LoginInvalidCredentials();
     }

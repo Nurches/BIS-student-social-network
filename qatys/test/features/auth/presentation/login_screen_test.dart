@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qatys/app.dart';
 import 'package:qatys/core/config/app_config.dart';
+import 'package:qatys/core/storage/local_store.dart';
 import 'package:qatys/features/auth/data/auth_providers.dart';
 import 'package:qatys/features/auth/data/mock_auth_repository.dart';
+import 'package:qatys/features/event/data/event_repository_provider.dart';
+import 'package:qatys/features/event/data/mock_event_repository.dart';
 
 import '../../../helpers/fakes.dart';
 
@@ -22,6 +25,10 @@ void main() {
           authRepositoryProvider.overrideWithValue(
             MockAuthRepository(latency: Duration.zero),
           ),
+          eventRepositoryProvider.overrideWithValue(
+            MockEventRepository(latency: Duration.zero),
+          ),
+          localStoreProvider.overrideWithValue(InMemoryStore()),
         ],
         child: const QatysApp(),
       ),
@@ -61,10 +68,7 @@ void main() {
 
     await signIn(tester, 'nurassyl@kbtu.kz', MockAuthRepository.demoPassword);
 
-    expect(
-      find.textContaining('Signed in as Turarbek Nurassyl'),
-      findsOneWidget,
-    );
+    expect(find.text('Autumn Hackathon 2026'), findsOneWidget);
     expect(storage.session, isNotNull);
 
     await tester.tap(find.byTooltip('Log out'));
@@ -85,7 +89,8 @@ void main() {
   testWidgets('lockout shows the minutes left (NFR-02)', (tester) async {
     await pumpApp(tester);
 
-    for (var i = 0; i < MockAuthRepository.maxFailedAttempts; i++) {
+    // Failures 1–5 answer "wrong password"; the 6th attempt sees the lock.
+    for (var i = 0; i <= MockAuthRepository.maxFailedAttempts; i++) {
       await signIn(tester, 'nurassyl@kbtu.kz', 'nope');
     }
 

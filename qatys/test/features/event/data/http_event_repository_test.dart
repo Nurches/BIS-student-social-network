@@ -143,9 +143,33 @@ void main() {
   });
 
   test('cancel sends DELETE', () async {
-    await repositoryAnswering(204).cancelRegistration(1);
+    final result = await repositoryAnswering(200, {
+      'status': 'cancelled',
+    }).cancelRegistration(1);
 
+    expect(result, isA<CancelSucceeded>());
     expect(requests.single.method, 'DELETE');
     expect(requests.single.url.path, '/api/v1/events/1/registrations');
+  });
+
+  test('cancel answers map to calm results (docs/api.md)', () async {
+    expect(
+      await repositoryAnswering(404, {
+        'error': 'not_registered',
+      }).cancelRegistration(1),
+      isA<CancelNotRegistered>(),
+    );
+    expect(
+      await repositoryAnswering(410, {
+        'error': 'event_started',
+      }).cancelRegistration(1),
+      isA<CancelEventStarted>(),
+    );
+    expect(
+      repositoryAnswering(404, {
+        'error': 'event_not_found',
+      }).cancelRegistration(1),
+      throwsA(isA<NotFoundException>()),
+    );
   });
 }

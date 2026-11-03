@@ -1,10 +1,9 @@
 import '../domain/event.dart';
 import '../domain/registration_result.dart';
 
-// TODO(confirm): docs/api.md does not define the event object in feed and
-// detail responses. Field names follow docs/schema.sql columns in snake_case,
-// as the rest of api.md does; `community_name`, `free_places`, `my_status`
-// and `waiting_position` are computed by the server.
+/// The Event object of the feed and detail responses (docs/api.md).
+/// `community_name`, `free_places`, `my_status` and `waiting_position` are
+/// computed by the server.
 Event eventFromJson(Map<String, Object?> json) {
   return Event(
     id: _field<int>(json, 'event_id'),
@@ -22,7 +21,28 @@ Event eventFromJson(Map<String, Object?> json) {
   );
 }
 
-// TODO(confirm): feed envelope `{ "items": [...], "next_cursor": "..." }`.
+/// The inverse of [eventFromJson], for the offline feed cache.
+Map<String, Object?> eventToJson(Event event) => {
+  'event_id': event.id,
+  'community_id': event.communityId,
+  'community_name': event.communityName,
+  'title': event.title,
+  'description': event.description,
+  'location': event.location,
+  'starts_at': event.startsAt.toUtc().toIso8601String(),
+  'registration_deadline': event.registrationDeadline.toUtc().toIso8601String(),
+  'participant_limit': event.participantLimit,
+  'free_places': event.freePlaces,
+  'my_status': switch (event.myState) {
+    RegistrationState.none => null,
+    RegistrationState.registered => 'confirmed',
+    RegistrationState.waitingList => 'waiting_list',
+  },
+  'waiting_position': event.waitingPosition,
+};
+
+/// Body of `GET /feed` (docs/api.md): `{ "items": [...], "next_cursor": ... }`,
+/// where `next_cursor` is opaque and `null` on the last page.
 FeedPage feedPageFromJson(Map<String, Object?> json) {
   final items = _field<List<Object?>>(json, 'items');
   return FeedPage(
@@ -49,9 +69,9 @@ RegistrationState _registrationState(String? status) => switch (status) {
   _ => throw FormatException('Unknown registration status "$status"'),
 };
 
-// TODO(confirm): schema.sql uses TIMESTAMP without time zone. The server must
-// send ISO 8601 with an offset (e.g. `2026-10-08T10:00:00+05:00`); a value
-// without one is read as device-local time.
+// docs/api.md: every timestamp is ISO 8601 with an offset
+// (e.g. `2026-11-20T10:00:00+05:00`). A value without one would be read as
+// device-local time.
 DateTime _dateTime(Map<String, Object?> json, String key) {
   final raw = _field<String>(json, key);
   final parsed = DateTime.tryParse(raw);

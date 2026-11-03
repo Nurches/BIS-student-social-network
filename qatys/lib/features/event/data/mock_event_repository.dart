@@ -74,13 +74,18 @@ class MockEventRepository implements EventRepository {
   }
 
   @override
-  Future<void> cancelRegistration(int eventId) async {
+  Future<CancelResult> cancelRegistration(int eventId) async {
     await _delay();
     final event = _find(eventId);
 
+    if (event.myState == RegistrationState.none) {
+      return const CancelNotRegistered();
+    }
+    if (!_now().isBefore(event.startsAt)) return const CancelEventStarted();
+
     switch (event.myState) {
       case RegistrationState.none:
-        throw NotFoundException('No registration for event $eventId');
+        break;
       case RegistrationState.waitingList:
         event.waiting -= 1;
       case RegistrationState.registered:
@@ -96,6 +101,7 @@ class MockEventRepository implements EventRepository {
     event
       ..myState = RegistrationState.none
       ..myPosition = null;
+    return const CancelSucceeded();
   }
 
   /// Demo and test hook: another student takes a place, e.g. to show the

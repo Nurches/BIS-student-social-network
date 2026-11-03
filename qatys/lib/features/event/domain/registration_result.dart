@@ -28,3 +28,24 @@ final class RegistrationAlreadyExists extends RegistrationResult {
 final class RegistrationClosed extends RegistrationResult {
   const RegistrationClosed();
 }
+
+/// Expected outcomes of `DELETE /events/{id}/registrations`.
+sealed class CancelResult {
+  const CancelResult();
+}
+
+/// 200: the place (or the waiting-list entry) is given up.
+final class CancelSucceeded extends CancelResult {
+  const CancelSucceeded();
+}
+
+/// 404 `not_registered`: nothing to cancel, e.g. already cancelled on
+/// another device. The screen simply shows the fresh state.
+final class CancelNotRegistered extends CancelResult {
+  const CancelNotRegistered();
+}
+
+/// 410 `event_started`: too late to cancel.
+final class CancelEventStarted extends CancelResult {
+  const CancelEventStarted();
+}

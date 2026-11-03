@@ -56,8 +56,11 @@ class ApiClient {
   final http.Client _http;
   final Duration timeout;
 
-  Future<ApiResponse> get(String path, {Map<String, String>? query}) =>
-      _send('GET', path, query: query);
+  Future<ApiResponse> get(
+    String path, {
+    Map<String, String>? query,
+    bool authenticated = true,
+  }) => _send('GET', path, query: query, authenticated: authenticated);
 
   Future<ApiResponse> post(
     String path, {
@@ -65,7 +68,11 @@ class ApiClient {
     bool authenticated = true,
   }) => _send('POST', path, body: body, authenticated: authenticated);
 
-  Future<ApiResponse> delete(String path) => _send('DELETE', path);
+  Future<ApiResponse> put(String path, {Object? body}) =>
+      _send('PUT', path, body: body);
+
+  Future<ApiResponse> delete(String path, {Object? body}) =>
+      _send('DELETE', path, body: body);
 
   Future<ApiResponse> _send(
     String method,
@@ -74,7 +81,9 @@ class ApiClient {
     Object? body,
     bool authenticated = true,
   }) async {
-    final uri = Uri.parse('$_baseUrl$path').replace(queryParameters: query);
+    final uri = Uri.parse(
+      '$_baseUrl$path',
+    ).replace(queryParameters: query?.isEmpty ?? true ? null : query);
     final request = http.Request(method, uri)
       ..headers['Accept'] = 'application/json';
 
