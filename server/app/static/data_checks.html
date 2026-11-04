@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qatys Data Checks</title>
+<style>
+  :root { --bg: #ffffff; --fg: #111827; --muted: #374151; --line: #9ca3af; --card: #f9fafb;
+          --accent: #0b3d91; --ok: #065f46; --okbg: #d1fae5; --err: #991b1b; --errbg: #fee2e2;
+          --gray: #1f2937; --graybg: #e5e7eb; --code: #f3f4f6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f172a; --fg: #f1f5f9; --muted: #cbd5e1; --line: #64748b; --card: #1e293b;
+            --accent: #93c5fd; --ok: #a7f3d0; --okbg: #064e3b; --err: #fecaca; --errbg: #7f1d1d;
+            --gray: #e2e8f0; --graybg: #334155; --code: #0b1220; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 16px; }
+  h1 { font-size: 1.5rem; margin: 0; flex: 1 1 auto; }
+  .who { color: var(--muted); }
+  p.lead { margin: 0 0 24px; color: var(--muted); }
+  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 0 0 16px;
+             max-width: 560px; }
+  legend { font-weight: 600; padding: 0 6px; }
+  label { display: block; font-weight: 500; margin: 12px 0 4px; }
+  input { width: 100%; min-height: 48px; padding: 10px 12px; font: inherit;
+          color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+  button { min-height: 48px; padding: 0 20px; font: inherit; font-weight: 600;
+           color: #fff; background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; }
+  @media (prefers-color-scheme: dark) { button { color: #0f172a; } }
+  button.secondary { color: var(--accent); background: transparent; border: 1px solid var(--accent); }
+  button:disabled { opacity: .6; cursor: not-allowed; }
+  form button { margin-top: 16px; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { padding: 2px 10px; border-radius: 999px; font-weight: 600; }
+  .msg { margin: 0 0 16px; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; }
+  .ok, .pass { color: var(--ok); background: var(--okbg); }
+  .err, .fail { color: var(--err); background: var(--errbg); }
+  .error { color: var(--gray); background: var(--graybg); }
+  .hidden { display: none !important; }
+  .card { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 16px;
+          border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 12px;
+          background: var(--card); }
+  @media (max-width: 520px) { .card { grid-template-columns: minmax(0, 1fr); gap: 8px; } }
+  .id { font: 600 1.125rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .badge { display: inline-block; margin-top: 6px; padding: 2px 10px; border-radius: 6px;
+           font-weight: 700; }
+  .title { font-weight: 600; font-size: 1.0625rem; margin: 0; }
+  .tag { display: inline-block; margin-left: 8px; padding: 0 8px; border: 1px solid var(--line);
+         border-radius: 4px; font: 500 .875rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+         color: var(--muted); vertical-align: 2px; }
+  .note { margin: 4px 0 0; color: var(--muted); }
+  .meta { margin: 8px 0 0; font-weight: 600; }
+  .scroll { overflow-x: auto; margin-top: 8px; }
+  table { border-collapse: collapse; font-size: .9375rem; }
+  th, td { border: 1px solid var(--line); padding: 4px 10px; text-align: left; white-space: nowrap; }
+  th { background: var(--code); }
+  pre { margin: 8px 0 0; padding: 10px 12px; background: var(--code); border-radius: 6px;
+        white-space: pre-wrap; word-break: break-word;
+        font: .9375rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .time { color: var(--muted); font-size: .875rem; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Qatys — Data checks</h1>
+    <span id="who" class="who hidden"></span>
+    <button id="logout" class="secondary hidden" type="button">Log out</button>
+  </header>
+  <p class="lead">Runs every check of <code>server/app/checks/data_checks.sql</code> on the live
+     database. A check passes when its SELECT returns no rows. The page only reads data.</p>
+
+  <form id="login">
+    <fieldset>
+      <legend>Sign in</legend>
+      <label for="email">University email</label>
+      <input id="email" type="email" autocomplete="username" required placeholder="name@kbtu.kz">
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button type="submit">Sign in</button>
+    </fieldset>
+  </form>
+
+  <div id="msg" class="msg hidden" role="status"></div>
+
+  <section id="tool" class="hidden">
+    <div class="bar">
+      <button id="run" type="button">Run checks</button>
+      <span id="ran" class="time"></span>
+      <div id="chips" class="chips" aria-live="polite"></div>
+    </div>
+    <div class="bar">
+      <button id="copy" class="secondary" type="button" disabled>Copy as Markdown</button>
+      <button id="download" class="secondary" type="button" disabled>Download JSON</button>
+    </div>
+    <div id="results"></div>
+  </section>
+</main>
+<script>
+  const api = "/api/v1";
+  const ZONE = "Asia/Almaty";
+  const LABEL = { pass: "✓ Pass", fail: "✗ Fail", error: "! Error" };
+  const WORD = { pass: "Pass", fail: "Fail", error: "Error" };
+  let token = null;
+  let email = null;
+  let report = null;
+
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, attrs, ...children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    // Values from the database are only ever set as text, never as HTML.
+    for (const child of children) node.append(child);
+    return node;
+  }
+
+  function store(key, value) {
+    try {
+      if (value === null) sessionStorage.removeItem(key); else sessionStorage.setItem(key, value);
+    } catch (_) { /* storage blocked: the session lasts until the tab closes */ }
+  }
+  function stored(key) {
+    try { return sessionStorage.getItem(key); } catch (_) { return null; }
+  }
+
+  function show(text, kind) {
+    const box = $("msg");
+    box.textContent = text;
+    box.className = "msg " + (kind || "err");
+  }
+  function hideMsg() { $("msg").className = "msg hidden"; }
+
+  function setSignedIn(newToken, newEmail) {
+    token = newToken; email = newEmail;
+    store("qatys.data-checks.token", token);
+    store("qatys.data-checks.email", email);
+    const signedIn = token !== null;
+    $("login").classList.toggle("hidden", signedIn);
+    $("tool").classList.toggle("hidden", !signedIn);
+    $("logout").classList.toggle("hidden", !signedIn);
+    $("who").classList.toggle("hidden", !signedIn);
+    $("who").textContent = signedIn ? email : "";
+  }
+
+  function almaty(iso) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-GB", {
+      timeZone: ZONE, year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+    return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+  }
+
+  function markdown(r) {
+    const s = r.summary;
+    const cell = (v) => String(v).replace(/\|/g, "\\|");
+    const lines = [
+      `Run: ${almaty(r.ran_at)} (${ZONE}) · live database · ` +
+        `${s.passed} passed, ${s.failed} failed, ${s.errors} errors`,
+      "",
+      "| # | Rule | Requirement | Rows | Result |",
+      "|---|---|---|---|---|",
+    ];
+    for (const c of r.checks) {
+      lines.push(`| ${cell(c.id)} | ${cell(c.title || "(no title)")} | ` +
+        `${cell(c.requirement || "—")} | ${c.row_count === null ? "—" : c.row_count} | ` +
+        `${WORD[c.status]} |`);
+    }
+    return lines.join("\n") + "\n";
+  }
+
+  function rowsTable(c) {
+    const head = el("tr", {}, ...c.columns.map((name) => el("th", { scope: "col" }, name)));
+    const body = c.rows.map((row) =>
+      el("tr", {}, ...row.map((v) => el("td", {}, v === null ? "NULL" : String(v)))));
+    return el("div", { class: "scroll" }, el("table", {}, el("thead", {}, head),
+      el("tbody", {}, ...body)));
+  }
+
+  function card(c) {
+    const side = el("div", {}, el("div", { class: "id" }, c.id),
+      el("span", { class: "badge " + c.status }, LABEL[c.status]));
+    const title = el("p", { class: "title" }, c.title || "(no title)");
+    if (c.requirement) title.append(el("span", { class: "tag" }, c.requirement));
+    const main = el("div", {}, title);
+    if (c.note) main.append(el("p", { class: "note" }, c.note));
+
+    if (c.status === "fail") {
+      const n = c.row_count;
+      let text = `${n} ${n === 1 ? "row breaks" : "rows break"} this rule`;
+      if (c.truncated) text += ` (first ${c.rows.length} shown)`;
+      main.append(el("p", { class: "meta" }, text));
+      if (c.columns.length) main.append(rowsTable(c));
+      else main.append(el("p", { class: "note" }, "Row values are hidden for this check (sensitive)."));
+    } else if (c.status === "error") {
+      main.append(el("pre", {}, "Error: " + (c.error || "unknown")));
+    }
+    main.append(el("p", { class: "time" }, `${c.duration_ms} ms`));
+    return el("article", { class: "card" }, side, main);
+  }
+
+  function render(r) {
+    report = r;
+    const s = r.summary;
+    $("ran").textContent = `Last run ${almaty(r.ran_at)} (${ZONE}) · ${r.database} · ${r.duration_ms} ms`;
+    $("chips").replaceChildren(
+      el("span", { class: "chip pass" }, `${s.passed} passed`),
+      el("span", { class: "chip fail" }, `${s.failed} failed`),
+      el("span", { class: "chip error" }, `${s.errors} errors`));
+    $("results").replaceChildren(...r.checks.map(card));
+    $("copy").disabled = false;
+    $("download").disabled = false;
+  }
+
+  $("login").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const button = e.submitter; button.disabled = true;
+    try {
+      const res = await fetch(api + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: $("email").value, password: $("password").value }),
+      });
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* empty body */ }
+      if (res.status === 200) {
+        $("password").value = "";
+        hideMsg();
+        setSignedIn(data.token, data.student.email);
+      } else if (res.status === 423) {
+        show("Account locked. Try again in " + data.retry_after_minutes + " min.");
+      } else {
+        show("Sign-in failed: " + (data && data.error || res.status));
+      }
+    } catch (_) {
+      show("No connection to the server.");
+    } finally { button.disabled = false; }
+  });
+
+  $("logout").addEventListener("click", () => {
+    setSignedIn(null, null);
+    report = null;
+    $("results").replaceChildren(); $("chips").replaceChildren(); $("ran").textContent = "";
+    $("copy").disabled = true; $("download").disabled = true;
+    hideMsg();
+  });
+
+  $("run").addEventListener("click", async () => {
+    const button = $("run"); button.disabled = true; button.textContent = "Running…";
+    try {
+      const res = await fetch(api + "/admin/data-checks",
+        { headers: { Authorization: "Bearer " + token } });
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* empty body */ }
+      if (res.status === 200) {
+        hideMsg();
+        render(data);
+      } else if (res.status === 401) {
+        setSignedIn(null, null);
+        show("Session expired. Sign in again.");
+      } else if (res.status === 403) {
+        show(`Access denied: ${email} is not on the data-checks allow list. Nothing was run.`);
+      } else if (res.status === 429) {
+        const wait = res.headers.get("Retry-After") || "10";
+        show(`One run per 10 seconds. Try again in ${wait} s.`);
+      } else {
+        show("The run failed: " + (data && data.error || "HTTP " + res.status));
+      }
+    } catch (_) {
+      show("No connection to the server.");
+    } finally { button.disabled = false; button.textContent = "Run checks"; }
+  });
+
+  $("copy").addEventListener("click", async () => {
+    if (!report) return;
+    const text = markdown(report);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      const area = el("textarea", {}, text);
+      document.body.append(area); area.select(); document.execCommand("copy"); area.remove();
+    }
+    show("Copied. Paste it into laila_report.md.", "ok");
+  });
+
+  $("download").addEventListener("click", () => {
+    if (!report) return;
+    const blob = new Blob([JSON.stringify(report, null, 2) + "\n"], { type: "application/json" });
+    const link = el("a", {
+      href: URL.createObjectURL(blob),
+      download: `data-checks-${almaty(report.ran_at).replace(/[-: ]/g, "")}.json`,
+    });
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  });
+
+  const saved = stored("qatys.data-checks.token");
+  if (saved) setSignedIn(saved, stored("qatys.data-checks.email"));
+</script>
+</body>
+</html>

@@ -129,6 +129,7 @@ class RateLimiter:
 
 
 login_rate_limiter = RateLimiter()
+data_checks_rate_limiter = RateLimiter()
 
 
 def client_ip(request: Request) -> str:

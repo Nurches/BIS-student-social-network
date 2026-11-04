@@ -1,6 +1,6 @@
 """Request and response bodies of docs/api.md."""
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
@@ -97,3 +97,35 @@ class DeviceTokenRequest(_Body):
 
 class DeviceTokenDeleteRequest(_Body):
     token: str = Field(min_length=1, max_length=512)
+
+
+# ---------- tools (not part of the product) ----------
+
+
+class DataCheckResult(BaseModel):
+    id: str
+    title: str | None
+    requirement: str | None
+    note: str | None
+    status: Literal["pass", "fail", "error"]
+    row_count: int | None
+    truncated: bool
+    columns: list[str]
+    rows: list[list[Any]]
+    duration_ms: int
+    error: str | None
+
+
+class DataChecksSummary(BaseModel):
+    total: int
+    passed: int
+    failed: int
+    errors: int
+
+
+class DataChecksReport(BaseModel):
+    ran_at: str  # ISO 8601 with offset, e.g. 2026-11-10T09:14:03+00:00
+    database: str
+    duration_ms: int
+    summary: DataChecksSummary
+    checks: list[DataCheckResult]
