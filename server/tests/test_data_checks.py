@@ -24,7 +24,8 @@ from .conftest import TEST_DATABASE_URL, FakePushSender
 URL = "/api/v1/admin/data-checks"
 SEED_PASSWORD = "qatys2026"
 SHIPPED = load_checks(DATA_CHECKS_FILE)
-IDS = [f"C{n:02d}" for n in range(1, 10)]
+# The checks shipped with the spec. Laila adds more (C10, ...) in the same file.
+ORIGINAL_IDS = [f"C{n:02d}" for n in range(1, 10)]
 
 
 def block(
@@ -87,8 +88,10 @@ def custom_client(
 # ---------- file format ----------
 
 
-def test_parser_reads_the_shipped_file_9_selects() -> None:
-    assert [c.id for c in SHIPPED] == IDS
+def test_parser_reads_the_shipped_file_all_selects() -> None:
+    ids = [c.id for c in SHIPPED]
+    assert ids[: len(ORIGINAL_IDS)] == ORIGINAL_IDS
+    assert len(set(ids)) == len(ids)
     assert all(c.error is None and c.sql for c in SHIPPED)
     assert all(c.sql.lstrip().upper().startswith(("SELECT", "WITH")) for c in SHIPPED)
     assert all(not c.sql.rstrip().endswith(";") for c in SHIPPED)
@@ -231,15 +234,14 @@ def test_a_slow_check_times_out_and_the_others_still_run(db: psycopg.Connection)
 # ---------- the shipped checks on real data ----------
 
 
-def test_seeded_database_passes_all_9_checks(
-    seeded: psycopg.Connection, client: TestClient
-) -> None:
+def test_seeded_database_passes_every_check(seeded: psycopg.Connection, client: TestClient) -> None:
     response = client.get(URL, headers=headers(client, "laila@kbtu.kz"))
 
     assert response.status_code == 200
     body = response.json()
-    assert body["summary"] == {"total": 9, "passed": 9, "failed": 0, "errors": 0}
-    assert [c["id"] for c in body["checks"]] == IDS
+    total = len(SHIPPED)
+    assert body["summary"] == {"total": total, "passed": total, "failed": 0, "errors": 0}
+    assert [c["id"] for c in body["checks"]] == [c.id for c in SHIPPED]
     assert body["duration_ms"] < 5000
     assert body["ran_at"].endswith("+00:00")
 
@@ -439,14 +441,16 @@ def test_fail_shows_count_up_to_20_rows_and_iso_timestamps(
     assert "qatys:" not in body["database"]
 
 
-def test_a_10th_check_needs_only_the_sql_file(seeded: psycopg.Connection, custom_client) -> None:
-    tenth = block("C10", "SELECT event_id FROM event WHERE participant_limit < 1;")
-    client = custom_client(DATA_CHECKS_FILE.read_text() + "\n" + tenth)
+def test_a_new_check_needs_only_the_sql_file(seeded: psycopg.Connection, custom_client) -> None:
+    new_id = f"C{max(int(c.id[1:]) for c in SHIPPED) + 1:02d}"
+    new = block(new_id, "SELECT event_id FROM event WHERE participant_limit < 1;")
+    client = custom_client(DATA_CHECKS_FILE.read_text() + "\n" + new)
 
     body = client.get(URL, headers=headers(client, "laila@kbtu.kz")).json()
 
-    assert body["summary"] == {"total": 10, "passed": 10, "failed": 0, "errors": 0}
-    assert body["checks"][-1]["id"] == "C10"
+    total = len(SHIPPED) + 1
+    assert body["summary"] == {"total": total, "passed": total, "failed": 0, "errors": 0}
+    assert body["checks"][-1]["id"] == new_id
 
 
 def test_debug_mode_rereads_the_file_on_every_run(

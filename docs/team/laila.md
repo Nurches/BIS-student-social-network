@@ -1,6 +1,7 @@
 # Taubay Laila — Data & Database
 
 This page currently covers only the data checks tool. The rest of the page is Laila's to write.
+Step-by-step guide for an AI assistant: [`laila-agent-prompt.md`](laila-agent-prompt.md).
 
 ## Data checks
 
