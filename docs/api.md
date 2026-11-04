@@ -318,6 +318,61 @@ Removes the token on logout, so a logged-out phone stops receiving pushes for th
 
 The server also deletes a token itself when FCM reports it as unregistered or invalid.
 
+## Tools (not part of the product)
+
+Used by the team, not by the app. Full specification: `docs/tools/data-checks-spec.md`.
+
+### GET /admin/data-checks
+
+Runs every check of `server/app/checks/data_checks.sql` (owned by the Data & Database member)
+against the database and returns the result. Page: `/data-checks`.
+
+* **Access:** the JWT from `POST /auth/login`, and the student's email must be in the
+  `DATA_CHECK_EMAILS` allow list.
+* **Read only:** one `READ ONLY` transaction, `statement_timeout` 3 s per statement, rolled
+  back at the end. Only the checks in the file run. There is no SQL from the request.
+* **Rate limit:** one run per 10 s per student.
+
+A check **passes** when its SELECT returns 0 rows, **fails** with 1 or more rows, and is an
+**error** on an SQL error, a timeout or a broken block in the file.
+
+```json
+{
+  "ran_at": "2026-11-10T09:14:03+00:00",
+  "database": "neon / qatys",
+  "duration_ms": 412,
+  "summary": { "total": 9, "passed": 8, "failed": 1, "errors": 0 },
+  "checks": [
+    {
+      "id": "C07",
+      "title": "Nobody waits while free places exist",
+      "requirement": "FR-03",
+      "note": "If this returns rows, a cancellation did not promote the waiting list.",
+      "status": "fail",
+      "row_count": 1,
+      "truncated": false,
+      "columns": ["event_id", "title", "participant_limit", "confirmed", "waiting"],
+      "rows": [[2, "IT Career Day", 200, 1, 1]],
+      "duration_ms": 18,
+      "error": null
+    }
+  ]
+}
+```
+
+`status` is `pass | fail | error`. `rows` holds at most 20 rows; `truncated` is `true` when
+`row_count` is larger. For a check marked `@sensitive true`, `columns` and `rows` are always
+empty, and only `row_count` is given. `row_count` is `null` for an error, and `error` holds
+the PostgreSQL message or the file-format problem. `database` is the host alias and the
+database name, never the user or the password. Timestamps in `rows` are ISO 8601 with an offset.
+
+| Code | Body |
+|---|---|
+| 200 | the report above |
+| 401 | `{ "error": "unauthorized" }` |
+| 403 | `{ "error": "not_allowed" }` — not on the allow list; nothing runs |
+| 429 | `{ "error": "too_many_requests" }` — second run within 10 s; header `Retry-After` |
+
 ## Still to design
 
 - editing an already published event: which changes re-notify the subscribers?

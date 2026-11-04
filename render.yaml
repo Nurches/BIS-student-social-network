@@ -20,3 +20,9 @@ services:
         generateValue: true  # Render creates a random secret
       - key: FCM_SERVICE_ACCOUNT_JSON
         sync: false
+      # /data-checks tool page (docs/tools/data-checks-spec.md): who may run the checks.
+      - key: DATA_CHECK_EMAILS
+        value: laila@kbtu.kz,madina@kbtu.kz,akbota@kbtu.kz,nurassyl@kbtu.kz,union@kbtu.kz
+      # Optional: the data checks connect as a read-only role. Empty = the main DATABASE_URL.
+      - key: DATABASE_URL_READONLY
+        sync: false

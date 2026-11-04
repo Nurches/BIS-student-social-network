@@ -13,7 +13,7 @@
 |---|---|
 | Code for the roadmap | **M0–M6 implemented and tested.** M7 stretch: admin web page done |
 | Main process | Works end to end on a real server and a real PostgreSQL: publish → notification rows → register / waiting list / cancel → promotion. Shown over HTTP and with the app's real network code |
-| Tests | **157 automated tests, all passing:** 66 server (pytest, real PostgreSQL 16), 90 app (Flutter), 1 app ↔ live server contract test |
+| Tests | **193 automated tests, all passing:** 102 server (pytest, real PostgreSQL 16), 90 app (Flutter), 1 app ↔ live server contract test |
 | Quality gates | `ruff` and `flutter analyze`: 0 issues |
 | NFR-01 | Laptop: 1000 users, 0 errors, p95 30 ms. **Render free tier (0.1 CPU): meets the target up to ~60 simulated users (p95 1.1 s), saturates at ~20 requests/s** — see section 3 |
 | Live system | **Deployed:** API https://qatys-api.onrender.com (Render, Frankfurt), database on Neon (Frankfurt). **A real push reached a real iPhone** and opened the event |
@@ -38,6 +38,7 @@ impossible by a database constraint.
 | M5 Reliability | ✅ Done | Offline queue, `/health` reachability, no endless spinners, full logout cleanup |
 | M6 Quality, security, release | ✅ Security pass, load test on Render, docs. Release: iPhone builds instead of the APK (pending PM agreement) | `deployment.md`, `network-map.md`, security tests |
 | M7 Stretch | 🟡 Admin web page done (`/admin`); Flutter Web and analytics not started | — |
+| T1 Data checks page (tool) | ✅ Implemented and tested, not deployed yet | `/data-checks`, `test_data_checks.py`; spec `docs/tools/data-checks-spec.md` |
 
 ---
 
@@ -193,6 +194,13 @@ by luck.
 ---
 
 ## 8. Milestone log
+
+### T1 — Data checks page — implemented 3 November 2026 (Week 10)
+
+- `/data-checks` page and `GET /api/v1/admin/data-checks`. They run the 9 checks of `server/app/checks/data_checks.sql` (owner: Laila) and show Pass/Fail/Error and the failing rows, with **Copy as Markdown** for her weekly report. A new check needs only an edit of the SQL file.
+- Read only: one `READ ONLY` transaction, 3 s statement timeout, rolled back. The parser accepts only one `SELECT`/`WITH` per check. Access is limited to the `DATA_CHECK_EMAILS` allow list, with one run per 10 s per student. A sensitive check (C08, password hashes) returns only a row count.
+- 36 tests on PostgreSQL 16. **Injected-violation tests:** for C01, C05–C09, each test breaks the seeded data and expects exactly that check to fail and all the others to pass. For C02–C04, the schema itself refuses the violation, and with the constraint dropped the check catches it. So "0 rows" is proven to mean "no defect", not "the query is wrong". Mutation check: weakening C07's condition makes its test fail.
+- Finding for Laila (not fixed on purpose): on the sample data of `docs/schema.sql`, **C07 fails**. *IT Career Day* has 1 confirmed of 200 places and 1 student on the waiting list.
 
 ### Live deploy — 3 November 2026 (Week 10)
 

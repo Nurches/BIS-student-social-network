@@ -82,7 +82,12 @@ curl https://qatys-api.onrender.com/api/v1/health
 # {"status":"ok"}
 ```
 
-Swagger UI: `https://qatys-api.onrender.com/docs` · admin page: `/admin`.
+Swagger UI: `https://qatys-api.onrender.com/docs` · admin page: `/admin` · data checks: `/data-checks`.
+
+**Data checks page** (`docs/tools/data-checks-spec.md`): `DATA_CHECK_EMAILS` (in `render.yaml`)
+lists who may run it. `DATABASE_URL_READONLY` is optional. Leave it empty and the checks use
+`DATABASE_URL` inside a READ ONLY transaction. Set it to a connection string for a read-only
+database role for a second line of defence.
 
 **Free tier sleeps** after 15 minutes without traffic; the first request then takes 30–60 s.
 Open `/api/v1/health` one minute before any demo (roadmap §7, step 1).

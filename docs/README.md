@@ -60,6 +60,9 @@ places are left.
 | `docs/project-status.md` | where the project is now, milestone log |
 | `docs/deployment.md` | run the whole system from zero, deploy to Render + Neon |
 | `docs/network-map.md` | phone → API → database, the push path, failures |
+| `docs/tools/` | specifications of team tools (data checks page) |
+| `docs/team/` | per-member notes (`laila.md`: data checks) |
+| `server/app/checks/data_checks.sql` | data integrity checks run by the `/data-checks` page (owner: Data & Database) |
 
 ## How to run the server
 
@@ -72,7 +75,8 @@ cp .env.example .env && python seed.py --yes  # tables + demo data
 uvicorn app.main:app --reload
 ```
 
-Interactive API documentation: http://localhost:8000/docs · admin page: http://localhost:8000/admin.
+Interactive API documentation: http://localhost:8000/docs · admin page: http://localhost:8000/admin ·
+data checks: http://localhost:8000/data-checks.
 Details, tests and deployment: `server/README.md`, `docs/deployment.md`.
 
 ## Requirements and where they are enforced
