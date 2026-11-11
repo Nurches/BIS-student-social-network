@@ -29,7 +29,7 @@ AI agent: iPhone demo, APNs, Keychain, `/data-checks`, checked against the live 
                                                       └──────────────────────────┘
 
  Team laptop ──HTTPS──▶ same FastAPI:
-     /admin        publish an event (confirmed admin, BR-01)
+     /admin        admin panel: publish and manage events, communities, pushes (BR-01)
      /docs         Swagger UI (public for the demo, finding A-05)
      /data-checks  Laila's integrity checks, READ ONLY transaction
  http://… ──301──▶ https://…   (no HSTS header yet, finding A-04)

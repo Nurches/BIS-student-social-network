@@ -10,6 +10,7 @@ Then real answers are compared with the documented examples.
 import ast
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import get_args
 
 import psycopg
 import pytest
@@ -21,7 +22,18 @@ import app as app_package
 from app.config import Settings
 from app.errors import ERRORS, FRAMEWORK_CODES, example_body
 from app.main import API_PREFIX, create_app
-from app.routers import admin, auth, communities, data_checks, devices, events, feed, health, me
+from app.routers import (
+    admin,
+    admin_panel,
+    auth,
+    communities,
+    data_checks,
+    devices,
+    events,
+    feed,
+    health,
+    me,
+)
 
 from .conftest import PASSWORD, Data
 
@@ -107,7 +119,18 @@ OPENAPI = APP.openapi()
 # (full path, route) of every documented endpoint, read from the routers themselves.
 ROUTES = [
     (API_PREFIX + route.path, route)
-    for module in (health, auth, feed, events, admin, devices, communities, me, data_checks)
+    for module in (
+        health,
+        auth,
+        feed,
+        events,
+        admin,
+        admin_panel,
+        devices,
+        communities,
+        me,
+        data_checks,
+    )
     for route in module.router.routes
     if isinstance(route, APIRoute) and route.include_in_schema
 ]
@@ -129,6 +152,11 @@ def documented_example(path: str, method: str, status: int, code: str) -> dict:
     return content["application/json"]["examples"][code]["value"]
 
 
+def _is_timestamp(annotation: object) -> bool:
+    """`AwareDatetime`, or `AwareDatetime | None` of a PATCH body."""
+    return annotation is AwareDatetime or AwareDatetime in get_args(annotation)
+
+
 def expected(route: APIRoute) -> set[tuple[int, str]]:
     module = route.endpoint.__module__.removeprefix("app.")
     codes = INDEX.codes((module, route.endpoint.__name__))
@@ -138,7 +166,7 @@ def expected(route: APIRoute) -> set[tuple[int, str]]:
     if route.body_field is not None:
         codes.add((413, "payload_too_large"))
         body_model = dependant.body_params[0].field_info.annotation
-        if any(f.annotation is AwareDatetime for f in body_model.model_fields.values()):
+        if any(_is_timestamp(f.annotation) for f in body_model.model_fields.values()):
             codes.add((422, "timestamp_without_offset"))
     return codes
 
@@ -183,7 +211,7 @@ def test_framework_codes_are_in_the_catalog() -> None:
 
 
 def test_default_fastapi_422_schema_is_replaced_by_ours() -> None:
-    assert len(ROUTES) == 18
+    assert len(ROUTES) == 33
     for path, route in ROUTES:
         (method,) = route.methods
         entry = OPENAPI["paths"][path][method.lower()]["responses"].get("422")

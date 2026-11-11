@@ -387,6 +387,54 @@ The in-app inbox: the same `notification` rows the pushes were sent for, so a mi
 
 `POST /me/notifications/read` marks all of the student's notifications read; `204`.
 
+## Admin panel (`/admin`, 11 November 2026)
+
+The page `/admin` and the endpoints under `/admin/...` behind it. Every call needs the token.
+Two kinds of admin, read from the database on every request:
+
+* **Moderator** of the Student Union (`student.is_moderator`, seed: `union@kbtu.kz`) — sees
+  and manages everything: creates communities, chooses their owner, confirms them (BR-01),
+  manages students.
+* **Community owner** (`community.owner_id`) — sees only the communities they own and their
+  events.
+
+Anyone else: `403 { "error": "not_an_admin" }`. Publishing stays
+`POST /communities/{id}/events` above, so BR-01 is checked in one place. Errors of every
+endpoint are listed in Swagger (tag *admin panel*). The schema is not changed (v2).
+
+| Endpoint | Who | What |
+|---|---|---|
+| `GET /admin/me` | admin | Account, `is_moderator`, owned communities |
+| `GET /admin/overview` | admin | Counts over the caller's scope; `students` and `devices` only for a moderator (else `null`) |
+| `GET /admin/communities` | admin | Communities with owner, `subscriber_count`, `published_events`, `open_events` |
+| `POST /admin/communities` | moderator | `{ "name", "description"?, "owner_email", "is_confirmed": true }` → `201`; `404 student_not_found`, `409 community_name_taken` |
+| `PATCH /admin/communities/{id}` | moderator | Any of `name`, `description` (`null` clears), `owner_email`, `is_confirmed` |
+| `GET /admin/events?community_id=` | admin | Every status, past included, newest deadline first, at most 300; `state` = `open \| closed \| finished \| cancelled \| draft`, `confirmed_count`, `waiting_count`, `notified_count`, `sent_count` |
+| `PATCH /admin/events/{id}` | owner / moderator | Any of `title`, `description`, `location`, `starts_at`, `registration_deadline`, `participant_limit` → `{ "event", "promoted" }` |
+| `POST /admin/events/{id}/cancel` | owner / moderator | `status = 'cancelled'`; `409 event_cancelled` the second time |
+| `POST /admin/events/{id}/notify` | owner / moderator | Notifies followers who joined after publication and resends pushes FCM has not accepted → `{ "new_recipients", "queued" }` |
+| `GET /admin/events/{id}/registrations` | owner / moderator | `{ "event", "items" }`: confirmed, then the waiting list with `position`, then cancelled |
+| `GET /admin/notifications?event_id=` | admin | Delivery log, newest first, at most 200: `sent_at` (`null` = not accepted by FCM), the student's `devices` now |
+| `POST /admin/push-test` | admin | One push (`data.type = "test"`) to every phone of the caller's own account, at once → `{ "fcm_configured", "devices", "sent", "failed", "removed" }` |
+| `GET /admin/students?q=` | moderator | Students with `is_moderator`, `is_locked`, counts; `q` matches email or name; at most 300 |
+| `PUT /admin/students/{id}/moderator` | moderator | `{ "is_moderator": bool }` → `204`; `409 cannot_change_own_role` |
+| `POST /admin/students/{id}/unlock` | moderator | Lifts the NFR-02 lockout → `204` |
+
+Rules of `PATCH /admin/events/{id}`:
+
+* a cancelled event cannot be changed: `409 event_cancelled`;
+* a **moved** deadline must be in the future (`422 deadline_in_the_past`, FR-02) and the
+  deadline is never after the start (`422 deadline_after_event_start`);
+* the limit cannot go below the confirmed count: `409 limit_below_confirmed` (nobody loses a
+  place);
+* a **larger** limit moves students up from the waiting list in queue order at once; each gets
+  the `waiting_list_promoted` notification and push, as after a cancellation (FR-03).
+
+Editing does not re-notify the followers. Cancelling hides the event from the feed, the event
+page, `GET /me/registrations` and the inbox, and keeps the registrations; it sends **no push**,
+because `notification.kind` has no value for it (`TODO(confirm)`: an `event_cancelled` kind is a
+schema change).
+
 ## Tools (not part of the product)
 
 Used by the team, not by the app. Full specification: `docs/tools/data-checks-spec.md`.
@@ -444,7 +492,10 @@ database name, never the user or the password. Timestamps in `rows` are ISO 8601
 
 ## Still to design
 
-- editing an already published event: which changes re-notify the subscribers?
-- cancelling an event: notify everyone who registered;
-- moderator endpoints (confirming a community, blocking a user);
+- editing an already published event: which changes re-notify the subscribers? (now: none;
+  only students promoted by a larger limit get a push);
+- cancelling an event: notify everyone who registered (now: hidden without a push, see
+  "Admin panel");
+- ~~moderator endpoints (confirming a community)~~ — done (admin panel); blocking a user is
+  the soft delete of schema v3;
 - ~~subscribe / unsubscribe endpoints~~ — done (MVP extension, see above).

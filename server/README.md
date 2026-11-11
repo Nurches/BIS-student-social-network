@@ -23,7 +23,10 @@ confirmed admin `union@kbtu.kz` (owner of *IT Club* = community 1, *Career Cente
 
 * **Swagger UI** — http://localhost:8000/docs: `POST /api/v1/auth/login` as `union@kbtu.kz`,
   copy `token`, press **Authorize**, then `POST /api/v1/communities/2/events`.
-* **Admin page** — http://localhost:8000/admin: the same in a small form.
+* **Admin panel** — http://localhost:8000/admin: publish, edit or cancel events, see the
+  participants (CSV), resend pushes, send a test push to your own phone, read the delivery
+  log; as a moderator (`union@kbtu.kz`) also create, confirm and hand over communities and
+  manage students (unlock, moderator role). API: `docs/api.md`, "Admin panel".
 
 ## Data checks (tool page)
 

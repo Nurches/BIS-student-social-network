@@ -80,6 +80,9 @@ unset DATABASE_URL DATABASE_URL_READONLY
    community **1** (IT Club), title "Push test", deadline tomorrow, 5 places → **Publish**.
    **All three phones vibrate** and show the push with the Qatys icon. Leave the event; it
    does not disturb the demo.
+   A phone stays silent? `/admin` → **Pushes**: the delivery log shows *No phone signed in*
+   (log in again on that phone) or *Not delivered yet* (Firebase / APNs). **Send test push**
+   checks the phones of the signed-in account alone, without publishing anything.
 
 ## 3. Demo script on iPhones (roadmap §7, 5 minutes)
 

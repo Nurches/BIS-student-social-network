@@ -5,160 +5,976 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qatys Admin</title>
 <style>
-  :root { --bg: #ffffff; --fg: #111827; --muted: #374151; --line: #9ca3af;
-          --accent: #0b3d91; --ok: #065f46; --okbg: #d1fae5; --err: #991b1b; --errbg: #fee2e2; }
+  :root {
+    --bg: #f4f6fb; --surface: #ffffff; --surface-2: #eef2f9; --fg: #0f172a; --muted: #475569;
+    --line: #d5dce8; --brand: #0b3d91; --brand-fg: #ffffff; --brand-soft: #e3ebf9;
+    --accent: #ffb020; --ok: #05603a; --okbg: #d1fadf; --warn: #7a4a00; --warnbg: #fff1d6;
+    --err: #9f1d1d; --errbg: #fee4e2; --info: #0b3d91; --infobg: #e3ebf9;
+    --shadow: 0 1px 2px rgba(15, 23, 42, .06), 0 4px 16px rgba(15, 23, 42, .05);
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0f172a; --fg: #f1f5f9; --muted: #cbd5e1; --line: #64748b;
-            --accent: #93c5fd; --ok: #a7f3d0; --okbg: #064e3b; --err: #fecaca; --errbg: #7f1d1d; }
+    :root {
+      --bg: #0b1220; --surface: #121b2e; --surface-2: #1a2540; --fg: #e8eefb; --muted: #a5b4cf;
+      --line: #2a3756; --brand: #8fb2ff; --brand-fg: #0b1220; --brand-soft: #1c2b4f;
+      --accent: #ffc04d; --ok: #8ce9b5; --okbg: #0f3b27; --warn: #ffd58a; --warnbg: #3d2c08;
+      --err: #ffb4ab; --errbg: #4a1612; --info: #b9ccff; --infobg: #1c2b4f;
+      --shadow: none;
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg);
-         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 560px; margin: 0 auto; padding: 24px 16px 48px; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; }
-  p.lead { margin: 0 0 24px; color: var(--muted); }
-  fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 0 0 16px; }
-  legend { font-weight: 600; padding: 0 6px; }
-  label { display: block; font-weight: 500; margin: 12px 0 4px; }
-  input, textarea { width: 100%; min-height: 48px; padding: 10px 12px; font: inherit;
-                    color: var(--fg); background: var(--bg);
-                    border: 1px solid var(--line); border-radius: 6px; }
-  textarea { min-height: 96px; resize: vertical; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  @media (max-width: 420px) { .row { grid-template-columns: 1fr; } }
-  button { min-height: 48px; padding: 0 20px; margin-top: 16px; font: inherit; font-weight: 600;
-           color: #fff; background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; }
-  @media (prefers-color-scheme: dark) { button { color: #0f172a; } }
-  button:disabled { opacity: .6; cursor: progress; }
-  .msg { margin-top: 12px; padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; }
-  .ok { color: var(--ok); background: var(--okbg); }
-  .err { color: var(--err); background: var(--errbg); }
-  .hidden { display: none; }
-  a { color: var(--accent); }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--brand); }
+  h1, h2, h3 { margin: 0; line-height: 1.25; }
+  h2 { font-size: 1.375rem; }
+  h3 { font-size: 1.0625rem; }
+  .hidden { display: none !important; }
+  .muted { color: var(--muted); }
+  .small { font-size: .875rem; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* ---------- top bar and navigation ---------- */
+  .topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px;
+            padding: 10px 20px; background: var(--brand); color: var(--brand-fg); }
+  @media (prefers-color-scheme: dark) { .topbar { background: #0e2a63; color: #fff; } }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.125rem; }
+  .logo-mark { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px;
+               background: var(--accent); color: #0b1220; font-weight: 800; }
+  .topbar .spacer { flex: 1; }
+  .topbar .who { font-size: .9rem; opacity: .9; text-align: right; }
+  .topbar button { color: inherit; border-color: rgba(255,255,255,.5); }
+  .role { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px;
+          background: var(--accent); color: #0b1220; font-size: .75rem; font-weight: 700; }
+
+  .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: calc(100vh - 50px); }
+  nav.side { padding: 16px 12px; border-right: 1px solid var(--line); background: var(--surface); }
+  nav.side button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px;
+                    margin: 0 0 4px; padding: 0 12px; border: 0; border-radius: 8px;
+                    background: transparent; color: var(--fg); font: inherit; font-weight: 500;
+                    text-align: left; cursor: pointer; }
+  nav.side button:hover { background: var(--surface-2); }
+  nav.side button[aria-current="page"] { background: var(--brand-soft); color: var(--brand);
+                                          font-weight: 700; }
+  nav.side .ico { width: 20px; text-align: center; }
+  main { padding: 24px 28px 64px; max-width: 1180px; width: 100%; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    nav.side { display: flex; gap: 4px; overflow-x: auto; padding: 8px 12px; border-right: 0;
+               border-bottom: 1px solid var(--line); position: sticky; top: 50px; z-index: 4; }
+    nav.side button { width: auto; flex: 0 0 auto; margin: 0; }
+    main { padding: 16px 16px 48px; }
+    .topbar { padding: 10px 16px; }
+    .topbar .who .name { display: none; }
+  }
+
+  .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-bottom: 18px; }
+  .page-head .grow { flex: 1 1 260px; }
+  .page-head p { margin: 4px 0 0; color: var(--muted); }
+
+  /* ---------- controls ---------- */
+  button.btn, a.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+               min-height: 40px; padding: 0 16px; border-radius: 8px; border: 1px solid transparent;
+               background: var(--brand); color: var(--brand-fg); font: inherit; font-weight: 600;
+               cursor: pointer; text-decoration: none; white-space: nowrap; }
+  button.btn.secondary { background: transparent; color: var(--brand); border-color: var(--line); }
+  button.btn.danger { background: transparent; color: var(--err); border-color: var(--line); }
+  button.btn.danger.armed { background: var(--err); color: #fff; border-color: var(--err); }
+  button.btn.small { min-height: 32px; padding: 0 10px; font-size: .875rem; }
+  button.btn:disabled { opacity: .55; cursor: not-allowed; }
+  button.btn:focus-visible, nav.side button:focus-visible, input:focus-visible,
+  select:focus-visible, textarea:focus-visible, .chip:focus-visible {
+    outline: 3px solid var(--accent); outline-offset: 2px; }
+  label { display: block; font-weight: 600; font-size: .875rem; margin: 12px 0 4px; }
+  input, select, textarea { width: 100%; min-height: 42px; padding: 8px 12px; font: inherit;
+                            color: var(--fg); background: var(--surface);
+                            border: 1px solid var(--line); border-radius: 8px; }
+  textarea { min-height: 88px; resize: vertical; }
+  input[type="checkbox"] { width: 18px; min-height: 18px; height: 18px; accent-color: var(--brand); }
+  .check { display: flex; align-items: center; gap: 8px; font-weight: 500; margin-top: 14px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+  @media (max-width: 560px) { .grid2 { grid-template-columns: 1fr; } }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .hint { margin: 6px 0 0; color: var(--muted); font-size: .8125rem; }
+
+  /* ---------- surfaces ---------- */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+          padding: 18px; box-shadow: var(--shadow); }
+  .card + .card { margin-top: 14px; }
+  .stack > * + * { margin-top: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+          padding: 14px 16px; box-shadow: var(--shadow); }
+  .tile .label { color: var(--muted); font-size: .8125rem; font-weight: 600;
+                 text-transform: uppercase; letter-spacing: .04em; }
+  .tile .value { font-size: 1.75rem; font-weight: 750; margin-top: 2px;
+                 font-variant-numeric: tabular-nums; }
+  .tile .sub { color: var(--muted); font-size: .8125rem; }
+  .section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+                   margin: 26px 0 10px; }
+  .section-title h3 { white-space: nowrap; }
+  .section-title select { width: auto; max-width: min(420px, 60%); }
+
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border-radius: 999px;
+           font-size: .75rem; font-weight: 700; white-space: nowrap; }
+  .b-ok { color: var(--ok); background: var(--okbg); }
+  .b-warn { color: var(--warn); background: var(--warnbg); }
+  .b-err { color: var(--err); background: var(--errbg); }
+  .b-info { color: var(--info); background: var(--infobg); }
+  .b-mute { color: var(--muted); background: var(--surface-2); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { min-height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line);
+          background: var(--surface); color: var(--fg); font: inherit; font-size: .875rem;
+          font-weight: 600; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--brand); border-color: var(--brand);
+                               color: var(--brand-fg); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .toolbar select, .toolbar input { width: auto; min-width: 200px; }
+
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px;
+                background: var(--surface); box-shadow: var(--shadow); }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { padding: 10px 12px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       background: var(--surface-2); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td .row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .events { display: grid; gap: 12px; }
+  .event { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; }
+  .event .title { font-weight: 700; font-size: 1.0625rem; }
+  .event .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: .875rem; }
+  .event .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .event .row-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  @media (max-width: 560px) { .event { grid-template-columns: 1fr; } .event .side { align-items: flex-start; } }
+  .meter { width: 180px; max-width: 100%; height: 8px; border-radius: 99px; background: var(--surface-2);
+           overflow: hidden; }
+  .meter > span { display: block; height: 100%; background: var(--brand); }
+  .meter.full > span { background: var(--accent); }
+
+  .empty { padding: 28px; text-align: center; color: var(--muted); border: 1px dashed var(--line);
+           border-radius: 12px; background: var(--surface); }
+  .notice { padding: 12px 14px; border-radius: 10px; margin: 0 0 14px; }
+  .notice.ok { color: var(--ok); background: var(--okbg); }
+  .notice.err { color: var(--err); background: var(--errbg); }
+  .notice.info { color: var(--info); background: var(--infobg); }
+  .notice.warn { color: var(--warn); background: var(--warnbg); }
+
+  /* ---------- login ---------- */
+  .login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+  .login .card { width: 100%; max-width: 400px; }
+  .login .logo { color: var(--brand); margin-bottom: 4px; }
+
+  /* ---------- drawer and toasts ---------- */
+  dialog { width: min(760px, 100vw - 24px); max-height: calc(100vh - 48px); padding: 0; border: 0;
+           border-radius: 14px; background: var(--surface); color: var(--fg); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+  dialog::backdrop { background: rgba(10, 18, 34, .55); }
+  .dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px;
+              border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+  .dlg-head .grow { flex: 1; }
+  .dlg-body { padding: 18px 20px 22px; }
+  .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: grid; gap: 8px;
+            max-width: min(420px, calc(100vw - 32px)); }
+  .toast { padding: 12px 14px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+           font-weight: 500; white-space: pre-wrap; }
+  .toast.ok { color: var(--ok); background: var(--okbg); }
+  .toast.err { color: var(--err); background: var(--errbg); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
+             border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 </head>
 <body>
-<main>
-  <h1>Qatys Admin</h1>
-  <p class="lead">Publish an event for a community confirmed by the Student Union.
-     Every subscriber gets a push. The same calls are in <a href="/docs">Swagger UI</a>.</p>
 
-  <form id="login">
-    <fieldset>
-      <legend>1. Sign in</legend>
-      <label for="email">University email</label>
-      <input id="email" type="email" autocomplete="username" required placeholder="name@kbtu.kz">
-      <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" required>
-      <button type="submit">Sign in</button>
-      <div id="login-msg" class="msg hidden" role="status"></div>
-    </fieldset>
+<!-- ============ sign in ============ -->
+<section id="login-view" class="login hidden">
+  <form id="login" class="card" autocomplete="on">
+    <div class="logo"><span class="logo-mark">Q</span> Qatys Admin</div>
+    <p class="muted small" style="margin:0 0 6px">For Student Union moderators and community owners.</p>
+    <div id="login-msg" class="notice err hidden" role="alert"></div>
+    <label for="email">University email</label>
+    <input id="email" type="email" autocomplete="username" required placeholder="name@kbtu.kz">
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <div class="actions"><button class="btn" type="submit" style="width:100%">Sign in</button></div>
+    <p class="hint">Also available: <a href="/data-checks">Data checks</a> · <a href="/docs">Swagger UI</a></p>
   </form>
+</section>
 
-  <form id="publish" class="hidden">
-    <fieldset>
-      <legend>2. Publish an event</legend>
-      <label for="community">Community ID</label>
-      <input id="community" type="number" min="1" required value="2">
-      <label for="title">Title</label>
-      <input id="title" required maxlength="160" value="Career Day">
-      <label for="description">Description</label>
-      <textarea id="description" maxlength="5000">Meet 12 companies, bring your CV.</textarea>
-      <label for="location">Location</label>
-      <input id="location" maxlength="160" value="Main hall">
-      <div class="row">
-        <div><label for="deadline">Registration deadline</label>
-             <input id="deadline" type="datetime-local" required></div>
-        <div><label for="starts">Starts at</label>
-             <input id="starts" type="datetime-local" required></div>
-      </div>
-      <label for="limit">Participant limit</label>
-      <input id="limit" type="number" min="1" max="10000" required value="2">
-      <button type="submit">Publish</button>
-      <div id="publish-msg" class="msg hidden" role="status"></div>
-    </fieldset>
-  </form>
-</main>
+<!-- ============ the panel ============ -->
+<div id="app" class="hidden">
+  <header class="topbar">
+    <div class="logo"><span class="logo-mark">Q</span> Qatys Admin</div>
+    <div class="spacer"></div>
+    <div class="who"><span class="name" id="who-name"></span><span id="who-role" class="role"></span></div>
+    <button id="logout" class="btn secondary small" type="button">Log out</button>
+  </header>
+  <div class="layout">
+    <nav class="side" aria-label="Sections">
+      <button data-view="overview"><span class="ico" aria-hidden="true">◎</span>Overview</button>
+      <button data-view="communities"><span class="ico" aria-hidden="true">◇</span>Communities</button>
+      <button data-view="events"><span class="ico" aria-hidden="true">▤</span>Events</button>
+      <button data-view="publish"><span class="ico" aria-hidden="true">＋</span>Publish event</button>
+      <button data-view="pushes"><span class="ico" aria-hidden="true">◉</span>Pushes</button>
+      <button data-view="students" data-moderator><span class="ico" aria-hidden="true">☰</span>Students</button>
+    </nav>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+
+<dialog id="drawer" aria-labelledby="drawer-title">
+  <div class="dlg-head">
+    <div class="grow"><h3 id="drawer-title"></h3><div id="drawer-sub" class="muted small"></div></div>
+    <button id="drawer-close" class="btn secondary small" type="button">Close</button>
+  </div>
+  <div id="drawer-body" class="dlg-body"></div>
+</dialog>
+
+<div id="toasts" class="toasts" aria-live="polite"></div>
+
 <script>
-  const api = "/api/v1";
-  let token = null;
+"use strict";
+const API = "/api/v1";
+const PATHS = {
+  me: "/admin/me", overview: "/admin/overview", communities: "/admin/communities",
+  events: "/admin/events", notifications: "/admin/notifications", pushTest: "/admin/push-test",
+  students: "/admin/students",
+};
+const REASONS = {
+  unauthorized: "Your session has expired. Sign in again.",
+  not_an_admin: "This account is not an admin: it is not a moderator and owns no community.",
+  moderator_only: "Only a Student Union moderator can do this.",
+  not_your_community: "This event belongs to a community you do not own.",
+  not_a_confirmed_admin: "You are not the owner of this community, or it is not confirmed yet (BR-01).",
+  community_not_found: "This community no longer exists.",
+  community_name_taken: "Another community already has this name.",
+  student_not_found: "No student with this email.",
+  event_not_found: "This event no longer exists.",
+  event_cancelled: "The event is cancelled and cannot be changed.",
+  limit_below_confirmed: "The new limit is below the number of confirmed students. Nobody loses a place.",
+  deadline_in_the_past: "The registration deadline is in the past (FR-02).",
+  deadline_after_event_start: "The registration deadline is after the event starts.",
+  cannot_change_own_role: "You cannot remove your own moderator role.",
+  timestamp_without_offset: "A date has no time zone.",
+  validation_failed: "Some fields are not filled in correctly.",
+  too_many_requests: "Too many attempts. Wait a minute.",
+  invalid_credentials: "Wrong email or password.",
+  payload_too_large: "The text is too long.",
+};
+const STATE = {
+  open: ["Open", "b-ok"], closed: ["Registration closed", "b-warn"], finished: ["Finished", "b-mute"],
+  cancelled: ["Cancelled", "b-err"], draft: ["Draft", "b-mute"],
+};
 
-  const $ = (id) => document.getElementById(id);
-  const local = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-    .toISOString().slice(0, 16);
-  const inHours = (h) => new Date(Date.now() + h * 3600000);
-  $("deadline").value = local(inHours(24));
-  $("starts").value = local(inHours(48));
+let token = null;
+let me = null;
+let current = "overview";
+const freshUi = () => ({ eventFilter: { community: "", state: "all", text: "" }, logEvent: "" });
+let ui = freshUi();
 
-  function show(id, text, ok) {
-    const el = $(id);
-    el.textContent = text;
-    el.className = "msg " + (ok ? "ok" : "err");
+// ---------- small helpers ----------
+
+const $ = (id) => document.getElementById(id);
+
+/** Builds an element. Every value from the server is set as text, never as HTML. */
+function h(tag, props, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(props || {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else if (key in node && typeof value !== "string") node[key] = value;
+    else node.setAttribute(key, value === true ? "" : value);
   }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : String(child));
+  }
+  return node;
+}
 
-  async function call(path, body) {
-    const res = await fetch(api + path, {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" },
+const store = {
+  get() { try { return sessionStorage.getItem("qatys-admin-token"); } catch (_) { return null; } },
+  set(v) { try { sessionStorage.setItem("qatys-admin-token", v); } catch (_) { /* private mode */ } },
+  clear() { try { sessionStorage.removeItem("qatys-admin-token"); } catch (_) { /* ignore */ } },
+};
+
+const dateFmt = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+});
+const fmt = (iso) => (iso ? dateFmt.format(new Date(iso)) : "—");
+const toLocalInput = (iso) => {
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+};
+const fromLocalInput = (value) => new Date(value).toISOString();
+const zoneLabel = (() => {
+  const minutes = -new Date().getTimezoneOffset();
+  const sign = minutes >= 0 ? "+" : "−";
+  const hh = Math.floor(Math.abs(minutes) / 60), mm = Math.abs(minutes) % 60;
+  return "UTC" + sign + hh + (mm ? ":" + String(mm).padStart(2, "0") : "");
+})();
+const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+function toast(text, ok = true) {
+  const node = h("div", { class: "toast " + (ok ? "ok" : "err"), role: ok ? "status" : "alert", text });
+  $("toasts").append(node);
+  setTimeout(() => node.remove(), ok ? 4500 : 7000);
+}
+
+function reason(res) {
+  const code = res.data && res.data.error;
+  if (code === "account_locked") {
+    return "Account locked after 5 wrong passwords. Try again in " +
+      res.data.retry_after_minutes + " min, or ask a moderator to unlock it.";
+  }
+  if (code === "validation_failed" && res.data.detail && res.data.detail.length) {
+    const d = res.data.detail[0];
+    return REASONS.validation_failed + " (" + d.loc.slice(1).join(".") + ": " + d.msg + ")";
+  }
+  return REASONS[code] || ("Request failed: " + (code || "HTTP " + res.status));
+}
+
+async function call(method, path, body) {
+  let res;
+  try {
+    res = await fetch(API + path, {
+      method,
+      headers: Object.assign(body !== undefined ? { "Content-Type": "application/json" } : {},
         token ? { Authorization: "Bearer " + token } : {}),
-      body: JSON.stringify(body),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    let data = null;
-    try { data = await res.json(); } catch (_) { /* empty body */ }
-    return { status: res.status, data };
+  } catch (_) {
+    return { status: 0, data: { error: "network" }, ok: false };
   }
+  let data = null;
+  try { data = await res.json(); } catch (_) { /* 204 or empty body */ }
+  if (res.status === 401 && token) { signOut("Your session has expired. Sign in again."); }
+  return { status: res.status, data, ok: res.ok };
+}
 
-  $("login").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const button = e.submitter; button.disabled = true;
-    try {
-      const { status, data } = await call("/auth/login",
-        { email: $("email").value, password: $("password").value });
-      if (status === 200) {
-        token = data.token;
-        show("login-msg", "Signed in as " + data.student.full_name + ".", true);
-        $("publish").classList.remove("hidden");
-      } else if (status === 423) {
-        show("login-msg", "Account locked. Try again in " + data.retry_after_minutes + " min.");
-      } else {
-        show("login-msg", "Sign-in failed: " + (data && data.error || status));
-      }
-    } catch (_) {
-      show("login-msg", "No connection to the server.");
-    } finally { button.disabled = false; }
+/** GET that renders an error box instead of the view when it fails. */
+async function load(path) {
+  const res = await call("GET", path);
+  if (res.status === 0) throw new Error("No connection to the server. It may be waking up — try again in 30 s.");
+  if (!res.ok) throw new Error(reason(res));
+  return res.data;
+}
+
+/** Runs an action on a button: disabled while it runs. */
+async function busy(button, action) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.replaceChildren(h("span", { class: "spinner", "aria-hidden": "true" }), " ", label);
+  try { return await action(); }
+  finally { button.disabled = false; button.textContent = label; }
+}
+
+/** A destructive button: the first click arms it, the second one runs. */
+function confirmButton(label, armedLabel, action) {
+  let timer = null;
+  const button = h("button", { class: "btn danger small", type: "button", text: label });
+  button.addEventListener("click", async () => {
+    if (!button.classList.contains("armed")) {
+      button.classList.add("armed");
+      button.textContent = armedLabel;
+      timer = setTimeout(() => { button.classList.remove("armed"); button.textContent = label; }, 4000);
+      return;
+    }
+    clearTimeout(timer);
+    button.classList.remove("armed");
+    button.textContent = label;
+    await busy(button, action);
   });
+  return button;
+}
 
-  $("publish").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const button = e.submitter; button.disabled = true;
-    try {
-      const { status, data } = await call("/communities/" + $("community").value + "/events", {
-        title: $("title").value,
-        description: $("description").value || null,
-        location: $("location").value || null,
-        // datetime-local has no zone: send the browser's offset explicitly.
-        registration_deadline: new Date($("deadline").value).toISOString(),
-        starts_at: new Date($("starts").value).toISOString(),
-        participant_limit: Number($("limit").value),
+function pageHead(title, text, ...actions) {
+  return h("div", { class: "page-head" },
+    h("div", { class: "grow" }, h("h2", { text: title }), text ? h("p", { text }) : null),
+    ...actions);
+}
+
+function badge(text, kind) { return h("span", { class: "badge " + kind, text }); }
+
+function emptyBox(text, ...extra) { return h("div", { class: "empty" }, h("p", { text, style: "margin:0" }), ...extra); }
+
+function csvDownload(name, rows) {
+  const cell = (v) => {
+    let s = v === null || v === undefined ? "" : String(v);
+    if (/^[=+\-@]/.test(s)) s = "'" + s; // no formulas when opened in Excel
+    return '"' + s.replace(/"/g, '""') + '"';
+  };
+  const text = "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = h("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---------- session ----------
+
+function showLogin(message) {
+  $("app").classList.add("hidden");
+  $("login-view").classList.remove("hidden");
+  const box = $("login-msg");
+  box.textContent = message || "";
+  box.classList.toggle("hidden", !message);
+  $("email").focus();
+}
+
+function signOut(message) {
+  token = null; me = null; ui = freshUi(); store.clear();
+  if ($("drawer").open) $("drawer").close();
+  showLogin(message);
+}
+
+async function start() {
+  const res = await call("GET", PATHS.me);
+  if (!res.ok) {
+    const message = res.status === 0 ? "No connection to the server." : reason(res);
+    token = null; store.clear();
+    showLogin(res.status === 401 ? null : message);
+    return;
+  }
+  me = res.data;
+  $("who-name").textContent = me.full_name + " · " + me.email;
+  $("who-role").textContent = me.is_moderator ? "Moderator" : "Community owner";
+  for (const b of document.querySelectorAll("nav.side [data-moderator]")) {
+    b.classList.toggle("hidden", !me.is_moderator);
+  }
+  $("login-view").classList.add("hidden");
+  $("app").classList.remove("hidden");
+  const fromHash = location.hash.slice(1);
+  go(VIEWS[fromHash] && (fromHash !== "students" || me.is_moderator) ? fromHash : "overview");
+}
+
+$("login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const button = e.submitter || e.target.querySelector("button");
+  await busy(button, async () => {
+    const res = await call("POST", "/auth/login",
+      { email: $("email").value.trim(), password: $("password").value });
+    if (!res.ok) {
+      showLogin(res.status === 0 ? "No connection to the server. It may be waking up — try again in 30 s." : reason(res));
+      return;
+    }
+    token = res.data.token;
+    store.set(token);
+    $("password").value = "";
+    await start();
+  });
+});
+$("logout").addEventListener("click", () => signOut());
+
+// ---------- navigation ----------
+
+for (const b of document.querySelectorAll("nav.side button")) {
+  b.addEventListener("click", () => go(b.dataset.view));
+}
+window.addEventListener("hashchange", () => {
+  const view = location.hash.slice(1);
+  if (me && VIEWS[view] && view !== current) go(view);
+});
+
+async function go(view, options) {
+  current = view;
+  if (location.hash.slice(1) !== view) history.replaceState(null, "", "#" + view);
+  for (const b of document.querySelectorAll("nav.side button")) {
+    if (b.dataset.view === view) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
+  const main = $("view");
+  main.replaceChildren(h("p", { class: "muted" }, h("span", { class: "spinner" }), " Loading…"));
+  try {
+    const content = await VIEWS[view](options || {});
+    if (current === view) main.replaceChildren(...[content].flat().filter(Boolean));
+  } catch (err) {
+    if (current === view && token) {
+      main.replaceChildren(h("div", { class: "notice err", role: "alert", text: err.message }),
+        h("button", { class: "btn secondary", type: "button", text: "Try again", onclick: () => go(view, options) }));
+    }
+  }
+}
+const refresh = () => go(current);
+
+// ---------- views ----------
+
+const VIEWS = {
+  async overview() {
+    const [o, list] = await Promise.all([load(PATHS.overview), load(PATHS.events)]);
+    const tile = (label, value, sub) => h("div", { class: "tile" },
+      h("div", { class: "label", text: label }), h("div", { class: "value", text: value }),
+      sub ? h("div", { class: "sub", text: sub }) : null);
+    const tiles = [
+      tile("Communities", o.communities, o.unconfirmed_communities
+        ? plural(o.unconfirmed_communities, "awaits", "await") + " confirmation" : "all confirmed"),
+      tile("Followers", o.subscribers, "distinct students"),
+      tile("Open events", o.open_events, o.published_events + " published · " + o.cancelled_events + " cancelled"),
+      tile("Registrations", o.confirmed_registrations, o.waiting_registrations + " on waiting lists"),
+      tile("Pushes delivered", o.notifications_sent,
+        o.notifications_unsent ? o.notifications_unsent + " not delivered yet" : "nothing pending"),
+    ];
+    if (o.students !== null) tiles.push(tile("Students", o.students, o.devices + " phones signed in"));
+
+    const upcoming = list.items.filter((e) => e.state === "open")
+      .sort((a, b) => new Date(a.registration_deadline) - new Date(b.registration_deadline)).slice(0, 5);
+    const confirmed = me.communities.filter((c) => c.is_confirmed);
+    return [
+      pageHead("Overview",
+        me.is_moderator ? "Everything in Qatys, as a Student Union moderator."
+          : "Your communities and their events.",
+        confirmed.length ? h("button", { class: "btn", type: "button", text: "Publish event", onclick: () => go("publish") }) : null,
+        h("button", { class: "btn secondary", type: "button", text: "Test push", onclick: () => go("pushes") })),
+      !confirmed.length && !me.is_moderator
+        ? h("div", { class: "notice warn", text: "None of your communities is confirmed yet, so you cannot publish. The Student Union confirms communities (BR-01)." })
+        : null,
+      h("div", { class: "tiles" }, tiles),
+      h("div", { class: "section-title" }, h("h3", { text: "Open for registration" }),
+        h("button", { class: "btn secondary small", type: "button", text: "All events", onclick: () => go("events") })),
+      upcoming.length ? h("div", { class: "events" }, upcoming.map(eventCard))
+        : emptyBox("No event is open for registration right now."),
+    ];
+  },
+
+  async communities() {
+    const items = await load(PATHS.communities);
+    const head = pageHead("Communities",
+      me.is_moderator ? "Create communities, choose who publishes for them and confirm them (BR-01)."
+        : "Communities you own. A moderator of the Student Union manages them.",
+      me.is_moderator ? h("button", { class: "btn", type: "button", text: "New community", onclick: () => openCommunityForm(null) }) : null);
+    if (!items.length) return [head, emptyBox("No communities yet.")];
+
+    const rows = items.map((c) => {
+      const mine = c.owner.student_id === me.student_id;
+      return h("tr", {},
+        h("td", {}, h("div", { style: "font-weight:700", text: c.name }),
+          c.description ? h("div", { class: "muted small", text: c.description }) : null),
+        h("td", {}, h("div", { text: c.owner.full_name }), h("div", { class: "muted small", text: c.owner.email })),
+        h("td", {}, c.is_confirmed ? badge("Confirmed", "b-ok") : badge("Awaiting confirmation", "b-warn")),
+        h("td", { class: "num", text: c.subscriber_count }),
+        h("td", { class: "num", text: c.open_events + " / " + c.published_events }),
+        h("td", {}, h("div", { class: "row-actions" },
+          h("button", { class: "btn secondary small", type: "button", text: "Events",
+            onclick: () => { ui.eventFilter.community = String(c.community_id); go("events"); } }),
+          mine && c.is_confirmed ? h("button", { class: "btn secondary small", type: "button", text: "Publish",
+            onclick: () => go("publish", { community: c.community_id }) }) : null,
+          me.is_moderator ? h("button", { class: "btn secondary small", type: "button", text: "Edit",
+            onclick: () => openCommunityForm(c) }) : null,
+          me.is_moderator ? h("button", { class: "btn secondary small", type: "button",
+            text: c.is_confirmed ? "Unconfirm" : "Confirm",
+            onclick: (e) => busy(e.currentTarget, () => saveCommunity(c, { is_confirmed: !c.is_confirmed },
+              c.is_confirmed ? "“" + c.name + "” can no longer publish." : "“" + c.name + "” is confirmed and can publish.")) }) : null)));
+    });
+    return [head, h("div", { class: "table-wrap" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Community", "Owner (publishes)", "Status", "Followers", "Open / published", ""]
+        .map((t) => h("th", { scope: "col", text: t })))),
+      h("tbody", {}, rows)))];
+  },
+
+  async events() {
+    const [list, communities] = await Promise.all([load(PATHS.events), load(PATHS.communities)]);
+    const f = ui.eventFilter;
+    if (!communities.some((c) => String(c.community_id) === f.community)) f.community = "";
+    const select = h("select", { "aria-label": "Community", onchange: (e) => { f.community = e.target.value; draw(); } },
+      h("option", { value: "", text: "All communities" }),
+      communities.map((c) => h("option", { value: String(c.community_id), text: c.name, selected: f.community === String(c.community_id) })));
+    const search = h("input", { type: "search", placeholder: "Search title", value: f.text, "aria-label": "Search title",
+      oninput: (e) => { f.text = e.target.value; draw(); } });
+    const states = [["all", "All"], ["open", "Open"], ["closed", "Closed"], ["finished", "Finished"], ["cancelled", "Cancelled"]];
+    const chips = h("div", { class: "chips", role: "group", "aria-label": "State" }, states.map(([key, label]) =>
+      h("button", { class: "chip", type: "button", "aria-pressed": String(f.state === key), text: label,
+        onclick: (e) => { f.state = key; for (const c of chips.children) c.setAttribute("aria-pressed", String(c === e.currentTarget)); draw(); } })));
+    const box = h("div", { class: "events" });
+    function draw() {
+      const text = f.text.trim().toLowerCase();
+      const shown = list.items.filter((e) =>
+        (!f.community || String(e.community_id) === f.community) &&
+        (f.state === "all" || e.state === f.state) &&
+        (!text || e.title.toLowerCase().includes(text)));
+      box.replaceChildren(...(shown.length ? shown.map(eventCard)
+        : [emptyBox(list.items.length ? "No event matches the filters." : "No events yet.")]));
+    }
+    draw();
+    const canPublish = me.communities.some((c) => c.is_confirmed);
+    return [
+      pageHead("Events", "Every event of " + (me.is_moderator ? "every community" : "your communities") + ", past and cancelled ones included.",
+        canPublish ? h("button", { class: "btn", type: "button", text: "Publish event", onclick: () => go("publish") }) : null),
+      h("div", { class: "toolbar" }, select, search, chips),
+      box,
+    ];
+  },
+
+  async publish(options) {
+    const confirmed = me.communities.filter((c) => c.is_confirmed);
+    const head = pageHead("Publish an event", "Every follower of the community gets a push at once (FR-01).");
+    if (!confirmed.length) {
+      return [head, h("div", { class: "notice warn", text: me.is_moderator
+        ? "You do not own a confirmed community. Publishing is done by a community's owner (BR-01): create one in Communities with yourself as the owner, or ask its owner to publish."
+        : "None of your communities is confirmed yet. The Student Union confirms communities (BR-01)." })];
+    }
+    const inHours = (hrs) => toLocalInput(new Date(Date.now() + hrs * 3600000).toISOString());
+    const field = (id, label, input, hint) => h("div", {}, h("label", { for: id, text: label }), input, hint ? h("p", { class: "hint", text: hint }) : null);
+    const form = h("form", { class: "card", style: "max-width:720px" },
+      field("p-community", "Community", h("select", { id: "p-community", required: true },
+        me.communities.map((c) => h("option", { value: String(c.community_id), disabled: !c.is_confirmed,
+          selected: options.community === c.community_id,
+          text: c.name + (c.is_confirmed ? "" : " — awaiting confirmation") })))),
+      field("p-title", "Title", h("input", { id: "p-title", required: true, maxlength: "160", placeholder: "Career Day" })),
+      field("p-description", "Description", h("textarea", { id: "p-description", maxlength: "5000", placeholder: "What, who for, what to bring" })),
+      field("p-location", "Location", h("input", { id: "p-location", maxlength: "160", placeholder: "Main hall" })),
+      h("div", { class: "grid2" },
+        field("p-deadline", "Registration deadline", h("input", { id: "p-deadline", type: "datetime-local", required: true, value: inHours(24) })),
+        field("p-starts", "Starts at", h("input", { id: "p-starts", type: "datetime-local", required: true, value: inHours(48) }))),
+      h("p", { class: "hint", text: "Times are in this computer's time zone (" + zoneLabel + "). The deadline must be in the future and not after the start." }),
+      field("p-limit", "Participant limit", h("input", { id: "p-limit", type: "number", min: "1", max: "10000", required: true, value: "30" }),
+        "When the places are taken, the next students join the waiting list."),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "submit", text: "Publish and notify followers" })));
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      await busy(e.submitter || form.querySelector("button[type=submit]"), async () => {
+        const community = $("p-community").value;
+        const res = await call("POST", "/communities/" + community + "/events", {
+          title: $("p-title").value,
+          description: $("p-description").value.trim() || null,
+          location: $("p-location").value.trim() || null,
+          registration_deadline: fromLocalInput($("p-deadline").value),
+          starts_at: fromLocalInput($("p-starts").value),
+          participant_limit: Number($("p-limit").value),
+        });
+        if (!res.ok) { toast(reason(res), false); return; }
+        toast("Published event #" + res.data.event_id + ". Pushes are on their way.");
+        ui.eventFilter = { community, state: "all", text: "" };
+        go("events");
       });
-      if (status === 201) {
-        show("publish-msg", "Published event #" + data.event_id + ". Pushes are on their way.", true);
-      } else {
-        const reasons = {
-          deadline_in_the_past: "The deadline is in the past (FR-02).",
-          deadline_after_event_start: "The deadline is after the event starts.",
-          not_a_confirmed_admin: "You are not the confirmed admin of this community (BR-01).",
-          community_not_found: "No community with this ID.",
-          unauthorized: "Session expired. Sign in again.",
-        };
-        const code = data && data.error;
-        show("publish-msg", (reasons[code] || "Not published: " + (code || status)) +
-          "\nHTTP " + status);
+    });
+    return [head, form];
+  },
+
+  async pushes() {
+    const [list, log] = await Promise.all([
+      load(PATHS.events),
+      load(PATHS.notifications + (ui.logEvent ? "?event_id=" + encodeURIComponent(ui.logEvent) : "")),
+    ]);
+    const result = h("div", { "aria-live": "polite" });
+    const testCard = h("div", { class: "card" },
+      h("h3", { text: "Test push to my phones" }),
+      h("p", { class: "muted", style: "margin:6px 0 0",
+        text: "Sends one push to every phone signed in to " + me.email + " in the Qatys app. Lock the phone first: while the app is open it shows its own banner instead." }),
+      h("div", { class: "actions" }, h("button", { class: "btn", type: "button", text: "Send test push",
+        onclick: (e) => busy(e.currentTarget, async () => {
+          const res = await call("POST", PATHS.pushTest);
+          if (!res.ok) { toast(reason(res), false); return; }
+          result.replaceChildren(pushTestNotice(res.data));
+        }) })),
+      result);
+
+    const eventSelect = h("select", { "aria-label": "Event", onchange: (e) => { ui.logEvent = e.target.value; refresh(); } },
+      h("option", { value: "", text: "All events" }),
+      list.items.map((e) => h("option", { value: String(e.event_id), selected: ui.logEvent === String(e.event_id),
+        text: e.title + " · " + e.community_name })));
+    const rows = log.items.map((n) => h("tr", {},
+      h("td", { class: "small", text: fmt(n.created_at) }),
+      h("td", {}, n.kind === "waiting_list_promoted" ? badge("Got a place", "b-info") : badge("New event", "b-mute")),
+      h("td", {}, h("div", { text: n.event_title }), h("div", { class: "muted small", text: n.community_name })),
+      h("td", {}, h("div", { text: n.student_name }), h("div", { class: "muted small", text: n.student_email })),
+      h("td", {}, deliveryBadge(n)),
+      h("td", { class: "small", text: n.is_read ? "Read" : "—" })));
+    return [
+      pageHead("Pushes", "Check that pushes reach a phone, and see who got which notification."),
+      testCard,
+      h("div", { class: "section-title" }, h("h3", { text: "Delivery log" }), eventSelect),
+      log.items.length ? h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Created", "Kind", "Event", "Student", "Delivery", "In app"].map((t) => h("th", { scope: "col", text: t })))),
+        h("tbody", {}, rows)))
+        : emptyBox("No notifications yet. Publishing an event creates one for every follower."),
+      h("p", { class: "hint", text: "Delivered = Firebase accepted the push for the student's phone. “No phone signed in” = the student has not signed in to the app on a phone since the last reseed; they still see it in the in-app inbox." }),
+    ];
+  },
+
+  async students() {
+    if (!me.is_moderator) return h("div", { class: "notice err", text: REASONS.moderator_only });
+    const box = h("div", {});
+    const search = h("input", { type: "search", placeholder: "Search name or email", "aria-label": "Search students" });
+    let timer = null;
+    async function draw() {
+      const q = search.value.trim();
+      try {
+        const data = await load(PATHS.students + (q ? "?q=" + encodeURIComponent(q) : ""));
+        box.replaceChildren(studentsTable(data.items, draw));
+      } catch (err) {
+        box.replaceChildren(h("div", { class: "notice err", text: err.message }));
       }
-    } catch (_) {
-      show("publish-msg", "No connection to the server.");
-    } finally { button.disabled = false; }
+    }
+    search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(draw, 250); });
+    await draw();
+    return [pageHead("Students", "Accounts, roles and lockouts (NFR-02: 5 wrong passwords lock an account for 15 minutes)."),
+      h("div", { class: "toolbar" }, search), box];
+  },
+};
+
+// ---------- pieces ----------
+
+function eventCard(e) {
+  const full = e.confirmed_count >= e.participant_limit;
+  const percent = Math.min(100, Math.round((e.confirmed_count / e.participant_limit) * 100));
+  const [stateLabel, stateClass] = STATE[e.state] || [e.state, "b-mute"];
+  const live = e.status === "published";
+  return h("article", { class: "card event" },
+    h("div", {},
+      h("div", { class: "title", text: e.title }),
+      h("div", { class: "meta" },
+        h("span", { text: e.community_name }),
+        h("span", { text: "Deadline " + fmt(e.registration_deadline) }),
+        h("span", { text: "Starts " + fmt(e.starts_at) }),
+        e.location ? h("span", { text: e.location }) : null)),
+    h("div", { class: "side" },
+      badge(stateLabel, stateClass),
+      h("div", { class: "small", text: e.confirmed_count + " / " + e.participant_limit + " places" +
+        (e.waiting_count ? " · " + e.waiting_count + " waiting" : "") }),
+      h("div", { class: "meter" + (full ? " full" : ""), role: "img", "aria-label": percent + "% of places taken" },
+        h("span", { style: "width:" + percent + "%" })),
+      h("div", { class: "muted small", text: "Pushes " + e.sent_count + " / " + e.notified_count + " delivered" })),
+    h("div", { class: "row-actions" },
+      h("button", { class: "btn secondary small", type: "button", text: "Participants", onclick: () => openParticipants(e) }),
+      live ? h("button", { class: "btn secondary small", type: "button", text: "Edit", onclick: () => openEventForm(e) }) : null,
+      live ? h("button", { class: "btn secondary small", type: "button", text: "Resend pushes",
+        onclick: (ev) => busy(ev.currentTarget, async () => {
+          const res = await call("POST", "/admin/events/" + e.event_id + "/notify");
+          if (!res.ok) { toast(reason(res), false); return; }
+          toast(res.data.queued
+            ? "Sending " + plural(res.data.queued, "push", "pushes") + (res.data.new_recipients ? " (" + res.data.new_recipients + " to new followers)" : "") + "."
+            : "Every follower has already received this event.");
+          setTimeout(refresh, 1500);
+        }) }) : null,
+      h("button", { class: "btn secondary small", type: "button", text: "Delivery log",
+        onclick: () => { ui.logEvent = String(e.event_id); go("pushes"); } }),
+      live ? confirmButton("Cancel event", "Click again to cancel", async () => {
+        const res = await call("POST", "/admin/events/" + e.event_id + "/cancel");
+        if (!res.ok) { toast(reason(res), false); return; }
+        toast("“" + e.title + "” is cancelled. Students no longer see it.");
+        refresh();
+      }) : null));
+}
+
+function deliveryBadge(n) {
+  if (n.sent_at) return h("span", {}, badge("Delivered", "b-ok"), h("div", { class: "muted small", text: fmt(n.sent_at) }));
+  if (!n.devices) return badge("No phone signed in", "b-warn");
+  return badge("Not delivered yet", "b-err");
+}
+
+function pushTestNotice(r) {
+  if (!r.fcm_configured) {
+    return h("div", { class: "notice err", style: "margin-top:14px",
+      text: "Firebase is not configured on the server (FCM_SERVICE_ACCOUNT_JSON is empty), so no push can be sent. See docs/deployment.md, section 2." });
+  }
+  if (!r.devices) {
+    return h("div", { class: "notice warn", style: "margin-top:14px",
+      text: "No phone is signed in to " + me.email + ". Open Qatys on the phone, sign in with this account and allow notifications, then try again." });
+  }
+  const parts = ["Firebase accepted the push for " + plural(r.sent, "phone", "phones") + " of " + r.devices + "."];
+  if (r.removed) parts.push(plural(r.removed, "old token was", "old tokens were") + " removed (app deleted or signed out).");
+  if (r.failed) parts.push(r.failed + " failed: see the server log (wrong APNs key or bundle id?).");
+  if (r.sent) parts.push("If nothing shows on the phone: Settings → Notifications → Qatys, and check the APNs key in Firebase (docs/testflight.md, section 0).");
+  return h("div", { class: "notice " + (r.sent ? "ok" : "err"), style: "margin-top:14px", text: parts.join(" ") });
+}
+
+function studentsTable(items, redraw) {
+  if (!items.length) return emptyBox("No student matches.");
+  const rows = items.map((s) => {
+    const self = s.student_id === me.student_id;
+    return h("tr", {},
+      h("td", {}, h("div", { style: "font-weight:600", text: s.full_name }), h("div", { class: "muted small", text: s.email })),
+      h("td", {}, h("div", { class: "chips" },
+        s.is_moderator ? badge("Moderator", "b-info") : null,
+        s.owned_communities ? badge(plural(s.owned_communities, "community", "communities"), "b-mute") : null,
+        s.is_locked ? badge("Locked", "b-err") : null)),
+      h("td", { class: "num", text: s.subscriptions }),
+      h("td", { class: "num", text: s.active_registrations }),
+      h("td", { class: "num", text: s.devices }),
+      h("td", { class: "small", text: fmt(s.created_at) }),
+      h("td", {}, h("div", { class: "row-actions" },
+        s.is_locked ? h("button", { class: "btn secondary small", type: "button", text: "Unlock",
+          onclick: (e) => busy(e.currentTarget, async () => {
+            const res = await call("POST", "/admin/students/" + s.student_id + "/unlock");
+            if (!res.ok) { toast(reason(res), false); return; }
+            toast(s.email + " can sign in again."); await redraw();
+          }) }) : null,
+        self ? null : s.is_moderator
+          ? confirmButton("Remove moderator", "Click again to remove", () => setRole(s, false, redraw))
+          : h("button", { class: "btn secondary small", type: "button", text: "Make moderator",
+            onclick: (e) => busy(e.currentTarget, () => setRole(s, true, redraw)) }))));
   });
+  return h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, ["Student", "Roles", "Follows", "Registrations", "Phones", "Joined", ""]
+      .map((t) => h("th", { scope: "col", text: t })))),
+    h("tbody", {}, rows)));
+}
+
+async function setRole(s, value, redraw) {
+  const res = await call("PUT", "/admin/students/" + s.student_id + "/moderator", { is_moderator: value });
+  if (!res.ok) { toast(reason(res), false); return; }
+  toast(s.full_name + (value ? " is now a moderator." : " is no longer a moderator."));
+  await redraw();
+}
+
+async function saveCommunity(c, changes, message) {
+  const res = await call("PATCH", "/admin/communities/" + c.community_id, changes);
+  if (!res.ok) { toast(reason(res), false); return false; }
+  toast(message);
+  const fresh = await call("GET", PATHS.me);
+  if (fresh.ok) me = fresh.data;
+  refresh();
+  return true;
+}
+
+// ---------- drawer: forms and lists ----------
+
+function openDrawer(title, sub, ...content) {
+  $("drawer-title").textContent = title;
+  $("drawer-sub").textContent = sub || "";
+  $("drawer-body").replaceChildren(...content);
+  if (!$("drawer").open) $("drawer").showModal();
+}
+$("drawer-close").addEventListener("click", () => $("drawer").close());
+$("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) $("drawer").close(); });
+
+function openCommunityForm(c) {
+  const isNew = c === null;
+  const form = h("form", {},
+    h("label", { for: "c-name", text: "Name" }),
+    h("input", { id: "c-name", required: true, maxlength: "120", value: isNew ? "" : c.name, placeholder: "Robotics Club" }),
+    h("label", { for: "c-description", text: "Description" }),
+    h("textarea", { id: "c-description", maxlength: "2000", placeholder: "What the community does" }),
+    h("label", { for: "c-owner", text: "Owner's email" }),
+    h("input", { id: "c-owner", type: "email", required: true, value: isNew ? "" : c.owner.email, placeholder: "name@kbtu.kz" }),
+    h("p", { class: "hint", text: "The owner is the one account that publishes this community's events (BR-01). They need a Qatys account." }),
+    h("label", { class: "check" }, h("input", { id: "c-confirmed", type: "checkbox", checked: isNew ? true : c.is_confirmed }),
+      "Confirmed by the Student Union (may publish)"),
+    h("div", { class: "actions" },
+      h("button", { class: "btn", type: "submit", text: isNew ? "Create community" : "Save changes" }),
+      h("button", { class: "btn secondary", type: "button", text: "Cancel", onclick: () => $("drawer").close() })));
+  form.querySelector("#c-description").value = isNew ? "" : (c.description || "");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await busy(e.submitter || form.querySelector("button[type=submit]"), async () => {
+      const body = {
+        name: $("c-name").value.trim(),
+        description: $("c-description").value.trim() || null,
+        owner_email: $("c-owner").value.trim(),
+        is_confirmed: $("c-confirmed").checked,
+      };
+      if (isNew) {
+        const res = await call("POST", PATHS.communities, body);
+        if (!res.ok) { toast(reason(res), false); return; }
+        toast("“" + res.data.name + "” is created. Owner: " + res.data.owner.full_name + ".");
+        const fresh = await call("GET", PATHS.me);
+        if (fresh.ok) me = fresh.data;
+        $("drawer").close(); refresh();
+        return;
+      }
+      const changes = {};
+      if (body.name !== c.name) changes.name = body.name;
+      if (body.description !== (c.description || null)) changes.description = body.description;
+      if (body.owner_email.toLowerCase() !== c.owner.email) changes.owner_email = body.owner_email;
+      if (body.is_confirmed !== c.is_confirmed) changes.is_confirmed = body.is_confirmed;
+      if (!Object.keys(changes).length) { $("drawer").close(); return; }
+      if (await saveCommunity(c, changes, "“" + body.name + "” is saved.")) $("drawer").close();
+    });
+  });
+  openDrawer(isNew ? "New community" : "Edit " + c.name, isNew ? "Moderator only" : "Created " + fmt(c.created_at), form);
+  $("c-name").focus();
+}
+
+function openEventForm(e) {
+  const form = h("form", {},
+    h("label", { for: "e-title", text: "Title" }),
+    h("input", { id: "e-title", required: true, maxlength: "160", value: e.title }),
+    h("label", { for: "e-description", text: "Description" }),
+    h("textarea", { id: "e-description", maxlength: "5000" }),
+    h("label", { for: "e-location", text: "Location" }),
+    h("input", { id: "e-location", maxlength: "160", value: e.location || "" }),
+    h("div", { class: "grid2" },
+      h("div", {}, h("label", { for: "e-deadline", text: "Registration deadline" }),
+        h("input", { id: "e-deadline", type: "datetime-local", required: true, value: toLocalInput(e.registration_deadline) })),
+      h("div", {}, h("label", { for: "e-starts", text: "Starts at" }),
+        h("input", { id: "e-starts", type: "datetime-local", required: true, value: toLocalInput(e.starts_at) }))),
+    h("p", { class: "hint", text: "Times in " + zoneLabel + "." }),
+    h("label", { for: "e-limit", text: "Participant limit" }),
+    h("input", { id: "e-limit", type: "number", min: String(Math.max(1, e.confirmed_count)), max: "10000", required: true, value: String(e.participant_limit) }),
+    h("p", { class: "hint", text: e.confirmed_count + " confirmed, " + e.waiting_count + " waiting. A larger limit moves waiting students up at once and sends each of them a push; it cannot go below the confirmed count." }),
+    h("div", { class: "actions" },
+      h("button", { class: "btn", type: "submit", text: "Save changes" }),
+      h("button", { class: "btn secondary", type: "button", text: "Cancel", onclick: () => $("drawer").close() })));
+  form.querySelector("#e-description").value = e.description || "";
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    await busy(ev.submitter || form.querySelector("button[type=submit]"), async () => {
+      const changes = {};
+      const title = $("e-title").value.trim();
+      const description = $("e-description").value.trim() || null;
+      const location = $("e-location").value.trim() || null;
+      const deadline = fromLocalInput($("e-deadline").value);
+      const starts = fromLocalInput($("e-starts").value);
+      const limit = Number($("e-limit").value);
+      if (title !== e.title) changes.title = title;
+      if (description !== (e.description || null)) changes.description = description;
+      if (location !== (e.location || null)) changes.location = location;
+      if ($("e-deadline").value !== toLocalInput(e.registration_deadline)) changes.registration_deadline = deadline;
+      if ($("e-starts").value !== toLocalInput(e.starts_at)) changes.starts_at = starts;
+      if (limit !== e.participant_limit) changes.participant_limit = limit;
+      if (!Object.keys(changes).length) { $("drawer").close(); return; }
+      const res = await call("PATCH", "/admin/events/" + e.event_id, changes);
+      if (!res.ok) { toast(reason(res), false); return; }
+      toast("Saved." + (res.data.promoted ? " " + plural(res.data.promoted, "student", "students") + " moved up from the waiting list and notified." : ""));
+      $("drawer").close();
+      refresh();
+    });
+  });
+  openDrawer("Edit event", e.community_name, form);
+  $("e-title").focus();
+}
+
+async function openParticipants(e) {
+  openDrawer(e.title, e.community_name, h("p", { class: "muted" }, h("span", { class: "spinner" }), " Loading…"));
+  let data;
+  try { data = await load("/admin/events/" + e.event_id + "/registrations"); }
+  catch (err) { $("drawer-body").replaceChildren(h("div", { class: "notice err", text: err.message })); return; }
+  const ev = data.event;
+  const label = { confirmed: ["Confirmed", "b-ok"], waiting_list: ["Waiting", "b-warn"], cancelled: ["Cancelled", "b-mute"] };
+  const active = data.items.filter((r) => r.status !== "cancelled");
+  const summary = h("div", { class: "chips", style: "margin-bottom:14px" },
+    badge(ev.confirmed_count + " / " + ev.participant_limit + " confirmed", "b-ok"),
+    badge(ev.waiting_count + " waiting", "b-warn"),
+    badge(fmt(ev.starts_at), "b-mute"));
+  const actions = h("div", { class: "actions", style: "margin:0 0 14px" },
+    h("button", { class: "btn secondary small", type: "button", text: "Download CSV", disabled: !data.items.length,
+      onclick: () => csvDownload("qatys-event-" + ev.event_id + ".csv", [
+        ["status", "waiting_position", "full_name", "email", "registered_at", "status_since"],
+        ...data.items.map((r) => [r.status, r.position, r.full_name, r.email, r.created_at, r.updated_at])]) }),
+    h("button", { class: "btn secondary small", type: "button", text: "Copy emails", disabled: !active.length,
+      onclick: async () => {
+        try { await navigator.clipboard.writeText(active.map((r) => r.email).join(", ")); toast("Copied " + plural(active.length, "email", "emails") + "."); }
+        catch (_) { toast("The browser did not allow copying.", false); }
+      } }));
+  const table = data.items.length ? h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, ["Status", "Student", "Since"].map((t) => h("th", { scope: "col", text: t })))),
+    h("tbody", {}, data.items.map((r) => h("tr", {},
+      h("td", {}, badge(label[r.status][0] + (r.position ? " #" + r.position : ""), label[r.status][1])),
+      h("td", {}, h("div", { text: r.full_name }), h("div", { class: "muted small", text: r.email })),
+      h("td", { class: "small", text: fmt(r.updated_at) }))))))
+    : emptyBox("Nobody has registered yet.");
+  $("drawer-body").replaceChildren(summary, actions, table);
+}
+
+// ---------- boot ----------
+
+token = store.get();
+if (token) start(); else showLogin();
 </script>
 </body>
 </html>

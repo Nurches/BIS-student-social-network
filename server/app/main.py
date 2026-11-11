@@ -16,7 +16,18 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from .config import Settings, get_settings
 from .db import create_pool
 from .errors import install_error_handlers
-from .routers import admin, auth, communities, data_checks, devices, events, feed, health, me
+from .routers import (
+    admin,
+    admin_panel,
+    auth,
+    communities,
+    data_checks,
+    devices,
+    events,
+    feed,
+    health,
+    me,
+)
 from .services.data_checks import load_checks
 from .services.push import PushSender, create_sender
 
@@ -118,12 +129,23 @@ def create_app(settings: Settings | None = None, push_sender: PushSender | None 
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origins,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type"],
         )
     app.add_middleware(BodySizeLimit, max_bytes=settings.max_body_bytes)
 
-    for router in (health, auth, feed, events, admin, devices, communities, me, data_checks):
+    for router in (
+        health,
+        auth,
+        feed,
+        events,
+        admin,
+        admin_panel,
+        devices,
+        communities,
+        me,
+        data_checks,
+    ):
         app.include_router(router.router, prefix=API_PREFIX)
 
     @app.get("/", include_in_schema=False)

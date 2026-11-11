@@ -46,11 +46,23 @@ ERRORS: dict[str, ErrorDoc] = {
         403, "BR-01: not the owner, or the community is not confirmed"
     ),
     "not_allowed": ErrorDoc(403, "Not in the DATA_CHECK_EMAILS allow list; nothing runs"),
-    "event_not_found": ErrorDoc(404, "No such event, or it is draft / cancelled"),
+    "not_an_admin": ErrorDoc(403, "Admin panel: not a moderator and owns no community"),
+    "moderator_only": ErrorDoc(403, "Admin panel: only a Student Union moderator may do this"),
+    "not_your_community": ErrorDoc(
+        403, "Admin panel: not the owner of this community and not a moderator"
+    ),
+    "event_not_found": ErrorDoc(404, "No such event (students: also a draft or cancelled one)"),
     "community_not_found": ErrorDoc(404, "No such community"),
     "not_registered": ErrorDoc(404, "No active registration of this student"),
+    "student_not_found": ErrorDoc(404, "No student with this id or email"),
     "email_already_registered": ErrorDoc(409, "An account with this email exists"),
     "already_registered": ErrorDoc(409, "Already confirmed or on the waiting list"),
+    "community_name_taken": ErrorDoc(409, "Another community already has this name"),
+    "event_cancelled": ErrorDoc(409, "The event is cancelled and cannot be changed"),
+    "limit_below_confirmed": ErrorDoc(
+        409, "The new participant limit is below the number of confirmed students"
+    ),
+    "cannot_change_own_role": ErrorDoc(409, "A moderator cannot remove their own role"),
     "deadline_passed": ErrorDoc(410, "FR-02: the registration deadline has passed"),
     "event_started": ErrorDoc(410, "Cancelling after the event started"),
     "payload_too_large": ErrorDoc(413, "Body over 64 KB, refused before parsing"),
