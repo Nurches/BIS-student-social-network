@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/config/app_config.dart';
+import 'core/config/demo_data_banner.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/domain/session.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/session_controller.dart';
 import 'features/event/presentation/event_detail_screen.dart';
-import 'features/feed/presentation/feed_screen.dart';
+import 'features/home/presentation/home_shell.dart';
+import 'features/inbox/presentation/inbox_controller.dart';
 import 'features/push/domain/push_service.dart';
 import 'features/push/presentation/notification_permission_prompt.dart';
 import 'features/push/presentation/push_controller.dart';
@@ -90,6 +93,8 @@ class _QatysAppState extends ConsumerState<QatysApp> {
   }
 
   void _showNotice(PushNotice notice) {
+    // The bell on the feed counts the new notification too.
+    ref.invalidate(inboxProvider);
     _messenger.currentState?.showSnackBar(
       SnackBar(
         content: Text('New event: ${notice.title}'),
@@ -112,8 +117,13 @@ class _QatysAppState extends ConsumerState<QatysApp> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionControllerProvider);
+    final demoDataWarning = ref.watch(appConfigProvider).showsDemoDataWarning;
 
     return MaterialApp(
+      builder: demoDataWarning
+          ? (context, child) =>
+                DemoDataBanner(child: child ?? const SizedBox.shrink())
+          : null,
       title: 'Qatys',
       navigatorKey: _navigator,
       scaffoldMessengerKey: _messenger,
@@ -121,7 +131,7 @@ class _QatysAppState extends ConsumerState<QatysApp> {
       darkTheme: AppTheme.dark(),
       debugShowCheckedModeBanner: false,
       home: switch (session) {
-        AsyncData(value: _?) => const FeedScreen(),
+        AsyncData(value: _?) => const HomeShell(),
         AsyncData() || AsyncError() => const LoginScreen(),
         AsyncLoading() => const _Splash(),
       },

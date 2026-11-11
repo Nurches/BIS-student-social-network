@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brand colour of the Qatys icon (AppTheme seed); tints the push icon. -->
+    <color name="qatys_blue">#0B3D91</color>
+</resources>

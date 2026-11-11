@@ -1,14 +1,20 @@
 import '../../../core/network/api_exception.dart';
+import '../../community/domain/community.dart';
+import '../../community/domain/community_repository.dart';
+import '../../inbox/domain/app_notification.dart';
+import '../../inbox/domain/notification_repository.dart';
 import '../domain/event.dart';
 import '../domain/event_repository.dart';
 import '../domain/registration_result.dart';
 
-/// In-memory [EventRepository] that behaves like the server in docs/api.md:
-/// it owns `freePlaces`, enforces the limit and the deadline, and keeps a
-/// waiting list. Data mirrors the seed in docs/schema.sql, seen by student 1,
-/// plus events that cover every demo scenario. Dates are relative to the
-/// moment the repository is created, so the demo never goes stale.
-class MockEventRepository implements EventRepository {
+/// The in-memory server of mock mode. It behaves like docs/api.md: it owns
+/// `freePlaces`, enforces the limit and the deadline, keeps a waiting list,
+/// the student's subscriptions and inbox. Data mirrors the seed in
+/// server/seed.py, seen by student 1, plus events that cover every demo
+/// scenario. Dates are relative to the moment the repository is created, so
+/// the demo never goes stale.
+class MockEventRepository
+    implements EventRepository, CommunityRepository, NotificationRepository {
   MockEventRepository({
     DateTime Function()? clock,
     this.latency = const Duration(milliseconds: 400),
@@ -22,6 +28,11 @@ class MockEventRepository implements EventRepository {
   final Duration latency;
 
   final Map<int, _MockEvent> _events = {};
+  final Map<int, _MockCommunity> _communities = {};
+
+  /// Communities student 1 follows; the feed shows only their events.
+  final Set<int> _subscribed = {1, 2};
+  final List<AppNotification> _inbox = [];
 
   @override
   Future<FeedPage> fetchFeed({int limit = 20, String? cursor}) async {
@@ -29,7 +40,11 @@ class MockEventRepository implements EventRepository {
     final now = _now();
     final visible =
         _events.values
-            .where((e) => now.isBefore(e.registrationDeadline))
+            .where(
+              (e) =>
+                  _subscribed.contains(e.community.id) &&
+                  now.isBefore(e.registrationDeadline),
+            )
             .toList()
           ..sort(
             (a, b) => a.registrationDeadline.compareTo(b.registrationDeadline),
@@ -104,6 +119,90 @@ class MockEventRepository implements EventRepository {
     return const CancelSucceeded();
   }
 
+  @override
+  Future<List<Event>> fetchMyEvents() async {
+    await _delay();
+    return [
+      for (final e in _events.values)
+        if (e.myState != RegistrationState.none) e.toEvent(),
+    ]..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+  }
+
+  // ---------- CommunityRepository ----------
+
+  @override
+  Future<List<Community>> fetchCommunities() async {
+    await _delay();
+    final now = _now();
+    return [
+      for (final c in _communities.values)
+        Community(
+          id: c.id,
+          name: c.name,
+          description: c.description,
+          isConfirmed: c.confirmed,
+          subscriberCount:
+              c.otherFollowers + (_subscribed.contains(c.id) ? 1 : 0),
+          upcomingEvents: _events.values
+              .where(
+                (e) =>
+                    e.community.id == c.id &&
+                    now.isBefore(e.registrationDeadline),
+              )
+              .length,
+          isSubscribed: _subscribed.contains(c.id),
+        ),
+    ]..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  @override
+  Future<void> setSubscribed(
+    int communityId, {
+    required bool subscribed,
+  }) async {
+    await _delay();
+    if (!_communities.containsKey(communityId)) {
+      throw NotFoundException('Community $communityId not found');
+    }
+    subscribed ? _subscribed.add(communityId) : _subscribed.remove(communityId);
+  }
+
+  @override
+  Future<List<Event>> fetchCommunityEvents(int communityId) async {
+    await _delay();
+    if (!_communities.containsKey(communityId)) {
+      throw NotFoundException('Community $communityId not found');
+    }
+    final now = _now();
+    return [
+      for (final e in _events.values)
+        if (e.community.id == communityId &&
+            now.isBefore(e.registrationDeadline))
+          e.toEvent(),
+    ]..sort((a, b) => a.registrationDeadline.compareTo(b.registrationDeadline));
+  }
+
+  // ---------- NotificationRepository ----------
+
+  @override
+  Future<Inbox> fetchInbox() async {
+    await _delay();
+    final items = [..._inbox]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return Inbox(
+      items: items,
+      unreadCount: items.where((n) => !n.isRead).length,
+    );
+  }
+
+  @override
+  Future<void> markAllRead() async {
+    await _delay();
+    for (var i = 0; i < _inbox.length; i++) {
+      _inbox[i] = _inbox[i].read();
+    }
+  }
+
   /// Demo and test hook: another student takes a place, e.g. to show the
   /// race on the last place (brief, section 9).
   void takePlaceByAnotherStudent(int eventId) {
@@ -124,6 +223,44 @@ class MockEventRepository implements EventRepository {
     final now = _now();
     const itClub = (id: 1, name: 'IT Club');
     const careerCenter = (id: 2, name: 'Career Center');
+    const sportsClub = (id: 4, name: 'Sports Club');
+    const volunteerHub = (id: 5, name: 'Volunteer Hub');
+
+    for (final community in [
+      _MockCommunity(
+        1,
+        'IT Club',
+        'Programming contests, hackathons and workshops',
+        otherFollowers: 41,
+      ),
+      _MockCommunity(
+        2,
+        'Career Center',
+        'Internships, job fairs, CV clinics',
+        otherFollowers: 87,
+      ),
+      _MockCommunity(
+        3,
+        'Debate Society',
+        'Weekly debates and tournaments',
+        confirmed: false,
+        otherFollowers: 12,
+      ),
+      _MockCommunity(
+        4,
+        'Sports Club',
+        'Futsal, volleyball and the KBTU running club',
+        otherFollowers: 56,
+      ),
+      _MockCommunity(
+        5,
+        'Volunteer Hub',
+        'Charity drives, campus clean-ups and mentoring',
+        otherFollowers: 23,
+      ),
+    ]) {
+      _communities[community.id] = community;
+    }
 
     for (final event in [
       _MockEvent(
@@ -186,10 +323,81 @@ class MockEventRepository implements EventRepository {
         participantLimit: 20,
         confirmed: 19,
       ),
+      // Communities student 1 does not follow yet: found in Explore.
+      _MockEvent(
+        id: 7,
+        community: sportsClub,
+        title: 'Futsal cup',
+        description: '5-a-side tournament between faculties. Teams of 5 to 7.',
+        location: 'Sports hall',
+        startsAt: now.add(const Duration(days: 8)),
+        registrationDeadline: now.add(const Duration(days: 6)),
+        participantLimit: 40,
+        confirmed: 4,
+      ),
+      _MockEvent(
+        id: 8,
+        community: volunteerHub,
+        title: 'Campus clean-up day',
+        description: 'Two hours outdoors, gloves and tea provided.',
+        location: 'Main entrance',
+        startsAt: now.add(const Duration(days: 5)),
+        registrationDeadline: now.add(const Duration(days: 3)),
+        participantLimit: 25,
+        confirmed: 2,
+      ),
     ]) {
       _events[event.id] = event;
     }
+
+    _inbox.addAll([
+      AppNotification(
+        id: 3,
+        kind: NotificationKind.eventPublished,
+        eventId: 6,
+        eventTitle: 'Flutter workshop',
+        communityName: itClub.name,
+        createdAt: now.subtract(const Duration(hours: 2)),
+        isRead: false,
+      ),
+      AppNotification(
+        id: 2,
+        kind: NotificationKind.eventPublished,
+        eventId: 5,
+        eventTitle: 'CV clinic',
+        communityName: careerCenter.name,
+        createdAt: now.subtract(const Duration(days: 1)),
+        isRead: true,
+      ),
+      AppNotification(
+        id: 1,
+        kind: NotificationKind.eventPublished,
+        eventId: 1,
+        eventTitle: 'Autumn Hackathon 2026',
+        communityName: itClub.name,
+        createdAt: now.subtract(const Duration(days: 2)),
+        isRead: true,
+      ),
+    ]);
   }
+}
+
+class _MockCommunity {
+  _MockCommunity(
+    this.id,
+    this.name,
+    this.description, {
+    this.confirmed = true,
+    this.otherFollowers = 0,
+  });
+
+  final int id;
+  final String name;
+  final String description;
+  final bool confirmed;
+
+  /// Followers other than the signed-in student.
+  final int otherFollowers;
 }
 
 class _MockEvent {

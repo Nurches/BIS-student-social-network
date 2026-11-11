@@ -10,6 +10,7 @@ import 'package:qatys/features/event/data/event_repository_provider.dart';
 import 'package:qatys/features/event/data/mock_event_repository.dart';
 
 import '../../../helpers/fakes.dart';
+import '../../../helpers/test_app.dart' show openTab, useTallPhone;
 
 void main() {
   late InMemorySessionStorage storage;
@@ -25,7 +26,7 @@ void main() {
           authRepositoryProvider.overrideWithValue(
             MockAuthRepository(latency: Duration.zero),
           ),
-          eventRepositoryProvider.overrideWithValue(
+          mockServerProvider.overrideWithValue(
             MockEventRepository(latency: Duration.zero),
           ),
           localStoreProvider.overrideWithValue(InMemoryStore()),
@@ -64,6 +65,7 @@ void main() {
   });
 
   testWidgets('signs in, then logout clears the stored token', (tester) async {
+    useTallPhone(tester);
     await pumpApp(tester);
 
     await signIn(tester, 'nurassyl@kbtu.kz', MockAuthRepository.demoPassword);
@@ -71,6 +73,7 @@ void main() {
     expect(find.text('Autumn Hackathon 2026'), findsOneWidget);
     expect(storage.session, isNotNull);
 
+    await openTab(tester, 'Profile'); // logout lives in the profile
     await tester.tap(find.byTooltip('Log out'));
     await tester.pumpAndSettle();
 

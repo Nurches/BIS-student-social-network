@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Query
 
 from ..db import Pool, get_pool
+from ..errors import error_responses
 from ..schemas import FeedResponse
 from ..security import CurrentStudent, current_student
 from ..services import events
@@ -8,7 +9,12 @@ from ..services import events
 router = APIRouter(tags=["events"])
 
 
-@router.get("/feed", response_model=FeedResponse, summary="Events from followed communities")
+@router.get(
+    "/feed",
+    response_model=FeedResponse,
+    summary="Events from followed communities",
+    responses=error_responses("unauthorized", "invalid_cursor", "validation_failed"),
+)
 def feed(
     limit: int = Query(20, ge=1, le=50),
     cursor: str | None = Query(None, max_length=200),

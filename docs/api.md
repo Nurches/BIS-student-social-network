@@ -11,6 +11,9 @@ registration is allowed — it only displays the answer.
 cursor, the lockout rule and the error format. Database changes are in
 `docs/migrations/002_contract_fixes.sql`.
 
+**Week 11 (2026-11-10):** error responses are documented in Swagger for every endpoint (D-01);
+`password_too_long` (422 on register) was raised by the server but missing here, now listed.
+
 ## Conventions
 
 **Errors.** Every error response has the body `{ "error": "<code>" }`, where `<code>` is a
@@ -21,11 +24,27 @@ range) are `422 { "error": "validation_failed", "detail": [...] }`.
 | Code | Error | When |
 |---|---|---|
 | 401 | `unauthorized` | Token missing, malformed, wrong signature or expired |
-| 404 | `<entity>_not_found` | The resource does not exist or the student may not see it |
-| 422 | `validation_failed` | The body or query does not match this document |
+| 403 | `not_a_confirmed_admin`, `not_allowed` | BR-01 publishing; the data checks allow list |
+| 404 | `<entity>_not_found`, `not_registered` | The resource does not exist or the student may not see it |
+| 409 | `email_already_registered`, `already_registered` | The thing already exists |
+| 410 | `deadline_passed`, `event_started` | Too late for this action |
 | 413 | `payload_too_large` | Body over 64 KB, rejected before parsing |
-| 429 | `too_many_requests` | `POST /auth/login`: more than 20 attempts per minute from one IP; header `Retry-After` |
+| 422 | `validation_failed` | The body, path or query does not match this document |
+| 423 | `account_locked` | NFR-02 lockout, with `retry_after_minutes` and header `Retry-After` |
+| 429 | `too_many_requests` | `POST /auth/login`: more than 20 attempts per minute from one IP; `/admin/data-checks`: second run within 10 s; header `Retry-After` |
 | 500 | `internal_error` | Never with a stack trace |
+
+**Swagger (`/docs`) shows the same.** Every endpoint lists the errors it can really return,
+with one example body each. The list lives in `server/app/errors.py` (`ERRORS`), and
+`server/tests/test_openapi_errors.py` follows each route through the code to every
+`ApiError` it can reach and fails if Swagger lists one code more or one code less (D-01,
+Week 11). The validation error appears in our format, not FastAPI's default
+`{"detail": [...]}`:
+
+```json
+{ "error": "validation_failed",
+  "detail": [ { "loc": ["body", "title"], "msg": "Field required", "type": "missing" } ] }
+```
 
 **Time.** Every timestamp is ISO 8601 **with an offset**, for example
 `2026-11-20T18:00:00+05:00`. The server stores `TIMESTAMPTZ`, runs in UTC and may answer in
@@ -60,7 +79,8 @@ check. The password is stored as a bcrypt hash with cost 12 (NFR-02).
 |---|---|
 | 201 | `{ "student_id": 12, "email": "student@kbtu.kz", "full_name": "Aru Sadykova" }` |
 | 422 | `{ "error": "not_a_university_email" }` — BR-01 |
-| 422 | `{ "error": "password_too_short" }` |
+| 422 | `{ "error": "password_too_short" }` — under 8 characters |
+| 422 | `{ "error": "password_too_long" }` — over 72 bytes (bcrypt reads only 72; refused instead of silently cut) |
 | 409 | `{ "error": "email_already_registered" }` |
 
 For the demo the account is active at once; no verification email is sent (known
@@ -318,6 +338,55 @@ Removes the token on logout, so a logged-out phone stops receiving pushes for th
 
 The server also deletes a token itself when FCM reports it as unregistered or invalid.
 
+## Communities and the student's own lists (MVP extension, Week 11)
+
+Added on 11 November 2026 so the app can be used without help: a new student finds
+communities and follows them, sees their own registrations and an inbox of every
+notification. All need the token; errors as in "Conventions" (Swagger lists them).
+
+### GET /communities
+
+Every community, ordered by name.
+
+```json
+[ { "community_id": 4, "name": "Sports Club", "description": "Futsal, volleyball and …",
+    "is_confirmed": true, "subscriber_count": 56, "upcoming_events": 1, "is_subscribed": false } ]
+```
+
+`is_confirmed`: confirmed by the Student Union, may publish (BR-01); an unconfirmed one can be
+followed but publishes nothing. `upcoming_events`: published, deadline not passed.
+
+### PUT | DELETE /communities/{id}/subscription
+
+Follow / unfollow. Both are idempotent and answer `204`. Following adds the community's events
+to `GET /feed` and its future pushes (FR-01); unfollowing does not touch existing
+registrations. `404 { "error": "community_not_found" }`.
+
+### GET /communities/{id}/events
+
+`{ "items": [Event, …] }` — published events of the community whose deadline has not passed,
+ordered by deadline, at most 50; also for a student who does not follow it. `404
+community_not_found`.
+
+### GET /me/registrations
+
+`{ "items": [Event, …] }` — events the student is `confirmed` for or on the `waiting_list` of,
+past ones included (the app splits "Upcoming" and "Past"). Cancelled rows are not listed.
+
+### GET /me/notifications · POST /me/notifications/read
+
+The in-app inbox: the same `notification` rows the pushes were sent for, so a missed push
+(silent phone, no network) is not lost. Newest first, at most 50, only published events.
+
+```json
+{ "items": [ { "notification_id": 31, "kind": "waiting_list_promoted", "event_id": 7,
+               "event_title": "Futsal cup", "community_name": "Sports Club",
+               "created_at": "2026-11-11T08:00:00+00:00", "is_read": false } ],
+  "unread_count": 1 }
+```
+
+`POST /me/notifications/read` marks all of the student's notifications read; `204`.
+
 ## Tools (not part of the product)
 
 Used by the team, not by the app. Full specification: `docs/tools/data-checks-spec.md`.
@@ -378,4 +447,4 @@ database name, never the user or the password. Timestamps in `rows` are ISO 8601
 - editing an already published event: which changes re-notify the subscribers?
 - cancelling an event: notify everyone who registered;
 - moderator endpoints (confirming a community, blocking a user);
-- subscribe / unsubscribe endpoints (roadmap M7; for the demo, subscriptions come from the seed).
+- ~~subscribe / unsubscribe endpoints~~ — done (MVP extension, see above).

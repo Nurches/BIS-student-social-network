@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 
 from ..db import Pool, get_pool
+from ..errors import error_responses
 from ..schemas import PublishEventRequest, PublishEventResponse
 from ..security import CurrentStudent, current_student
 from ..services import events
@@ -14,6 +15,16 @@ router = APIRouter(tags=["admin"])
     status_code=201,
     response_model=PublishEventResponse,
     summary="Publish an event (confirmed community admin only)",
+    responses=error_responses(
+        "unauthorized",
+        "not_a_confirmed_admin",
+        "community_not_found",
+        "payload_too_large",
+        "deadline_in_the_past",
+        "deadline_after_event_start",
+        "timestamp_without_offset",
+        "validation_failed",
+    ),
 )
 def publish(
     community_id: int,

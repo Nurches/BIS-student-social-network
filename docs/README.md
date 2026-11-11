@@ -33,10 +33,10 @@ places are left.
 
 | Layer | Technology |
 |---|---|
-| Mobile client | Flutter (Android, iOS) |
-| Push notifications | Firebase Cloud Messaging |
-| Server | FastAPI (Python 3.12) |
-| Database | PostgreSQL 16 |
+| Mobile client | Flutter — demo on iPhone through TestFlight; Android configured, not demoed |
+| Push notifications | Firebase Cloud Messaging → Apple Push Notification service |
+| Server | FastAPI (Python 3.12) on Render |
+| Database | PostgreSQL 16 on Neon |
 | Auth | JWT access token, bcrypt cost 12 |
 
 ## Repository structure
@@ -56,13 +56,22 @@ places are left.
 | `docs/roles_and_architecture.xlsx` | role matrix, architecture components, security decisions |
 | `docs/test_cases_and_rtm.xlsx` | test cases, traceability matrix, analytics metrics |
 | `docs/migrations/` | upgrades of an existing database (002: contract fixes) |
+| `docs/testflight.md` | install the iPhone app through TestFlight (build, upload, testers, phones) |
+| `docs/demo-runbook.md` | when and how to reseed, the 5-minute demo on three iPhones, backup video |
 | `docs/roadmap.md` | plan to the Week 15 defence |
 | `docs/project-status.md` | where the project is now, milestone log |
 | `docs/deployment.md` | run the whole system from zero, deploy to Render + Neon |
 | `docs/network-map.md` | phone → API → database, the push path, failures |
 | `docs/tools/` | specifications of team tools (data checks page) |
-| `docs/team/` | per-member notes (`laila.md`: data checks) |
+| `docs/team/` | per-member pages with each member's Week 11 work and "Explain it yourself": [`laila.md`](team/laila.md), [`madina.md`](team/madina.md), [`akbota.md`](team/akbota.md), [`gulnazym.md`](team/gulnazym.md) |
 | `server/app/checks/data_checks.sql` | data integrity checks run by the `/data-checks` page (owner: Data & Database) |
+
+## Install the app (iPhone)
+
+The demo app is installed through **TestFlight** (internal testing group "UniHub demo"):
+install TestFlight from the App Store, open the invitation, **Install**, log in with a demo
+account and allow notifications. Step by step, and how the owner builds and uploads a build:
+[`docs/testflight.md`](testflight.md). Before a demo: [`docs/demo-runbook.md`](demo-runbook.md).
 
 ## How to run the server
 
@@ -92,5 +101,6 @@ Details, tests and deployment: `server/README.md`, `docs/deployment.md`.
 
 ## Status
 
-Week 10 — the main process works end to end on a real server and database (milestones
-M0–M6 of `docs/roadmap.md` implemented). See `docs/project-status.md`.
+Week 11 — the main process works end to end on the deployed server and database (milestones
+M0–M6 of `docs/roadmap.md`); the demo runs on three iPhones through TestFlight. See
+`docs/project-status.md`.

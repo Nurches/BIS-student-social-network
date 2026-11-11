@@ -16,7 +16,8 @@ uvicorn app.main:app --reload                 # http://localhost:8000/docs
 ```
 
 Demo accounts (password `qatys2026`): students `nurassyl@`, `laila@`, `madina@`, … `@kbtu.kz`;
-confirmed admin `union@kbtu.kz` (owner of *IT Club* = community 1 and *Career Center* = 2).
+confirmed admin `union@kbtu.kz` (owner of *IT Club* = community 1, *Career Center* = 2,
+*Sports Club* = 4 and *Volunteer Hub* = 5; the demo accounts follow only 1 and 2).
 
 ## Publish an event (admin)
 
@@ -36,7 +37,15 @@ DATA_CHECKS_RELOAD=true uvicorn app.main:app --reload   # re-reads the SQL file 
 ```
 
 Without `DATA_CHECKS_RELOAD`, the file is read once at start; a duplicate `@check` id stops
-the server with a clear error. On a fresh `python seed.py --yes`, all 9 checks pass.
+the server with a clear error. On a fresh `python seed.py --yes`, all 10 checks pass.
+
+## Seed safety
+
+`seed.py` deletes every table. `--yes` is enough for `localhost`, `127.0.0.1` and the
+docker-compose `db`; any other host (Neon) also needs `--live` and the database name typed
+at the prompt. At the end it grants `SELECT` again to the read-only role of
+`DATABASE_URL_READONLY` (default `qatys_readonly`) if that role exists. Before reseeding the
+live database read `../docs/demo-runbook.md`.
 
 ## Checks
 
@@ -48,6 +57,9 @@ pytest                       # needs the database from docker compose (qatys_tes
 | Test file | What it proves |
 |---|---|
 | `test_auth.py` | BR-01 domain check, bcrypt, TC-06 lockout (6th attempt → 423), rate limit, JWT |
+| `test_openapi_errors.py` | Swagger lists exactly the errors each route can raise (static walk over the code), examples match real answers (D-01) |
+| `test_communities_and_me.py` | follow / unfollow (feed and pushes follow), community events, my registrations, inbox (MVP extension) |
+| `test_seed_safety.py` | `seed.py` refuses a remote database without `--live` and the typed name; read-only role keeps `SELECT`; demo accounts |
 | `test_feed.py` | keyset pagination over 45 events, no skips/repeats, Event object contract |
 | `test_registrations.py` | TC-02, TC-03, re-registration, waiting-list promotion, no overbooking |
 | `test_race.py` | two (and eight) students take the last place at the same moment |
@@ -77,7 +89,8 @@ app/
   schemas.py    request / response bodies of docs/api.md
   routers/      HTTP layer only
   services/     business rules in plain SQL: auth, events (feed, registration,
-                publishing), devices, push (FCM HTTP v1), data_checks (tool)
+                publishing), social (communities, my lists, inbox), devices,
+                push (FCM HTTP v1), data_checks (tool)
   checks/       data_checks.sql — the checks of /data-checks (owner: Data & Database)
   static/       admin.html, data_checks.html
   schema.sql    docs/schema.sql without test data

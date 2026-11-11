@@ -182,6 +182,7 @@ void main() {
     testWidgets('the queue survives an app restart and is sent on launch', (
       tester,
     ) async {
+      useTallPhone(tester);
       final app = await openEvent(tester, 1);
       app.events.offline = true;
       await tester.tap(button('Register'));

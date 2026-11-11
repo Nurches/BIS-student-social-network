@@ -1,6 +1,7 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, Request, Response
 
 from ..db import Pool, get_pool
+from ..errors import error_responses
 from ..schemas import (
     CancelOut,
     EventOut,
@@ -14,7 +15,12 @@ from . import schedule_push
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-@router.get("/{event_id}", response_model=EventOut, summary="One event with fresh free places")
+@router.get(
+    "/{event_id}",
+    response_model=EventOut,
+    summary="One event with fresh free places",
+    responses=error_responses("unauthorized", "event_not_found", "validation_failed"),
+)
 def event_detail(
     event_id: int,
     me: CurrentStudent = Depends(current_student),
@@ -28,7 +34,16 @@ def event_detail(
     "/{event_id}/registrations",
     status_code=201,
     response_model=RegistrationConfirmedOut | RegistrationWaitingOut,
-    responses={200: {"model": RegistrationWaitingOut, "description": "Full: waiting list"}},
+    responses={
+        200: {"model": RegistrationWaitingOut, "description": "Full: waiting list"},
+        **error_responses(
+            "unauthorized",
+            "event_not_found",
+            "already_registered",
+            "deadline_passed",
+            "validation_failed",
+        ),
+    },
     summary="Register (FR-03)",
 )
 def register(
@@ -46,7 +61,12 @@ def register(
 
 
 @router.delete(
-    "/{event_id}/registrations", response_model=CancelOut, summary="Cancel own registration"
+    "/{event_id}/registrations",
+    response_model=CancelOut,
+    summary="Cancel own registration",
+    responses=error_responses(
+        "unauthorized", "event_not_found", "not_registered", "event_started", "validation_failed"
+    ),
 )
 def cancel(
     event_id: int,

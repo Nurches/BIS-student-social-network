@@ -84,6 +84,7 @@ void main() {
     push.notices.add(const PushNotice(title: 'Career Day', eventId: 2));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300)); // snackbar slides in
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('New event: Career Day'), findsOneWidget);
 
     await tester.tap(find.text('Open'));
@@ -148,6 +149,7 @@ void main() {
     await app.pump(tester);
     expect(app.store.values, isNotEmpty); // feed cache
 
+    await openTab(tester, 'Profile'); // logout lives in the profile
     await tester.tap(find.byTooltip('Log out'));
     await tester.pumpAndSettle();
 

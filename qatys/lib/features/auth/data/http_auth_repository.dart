@@ -2,6 +2,7 @@ import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../domain/auth_repository.dart';
 import '../domain/login_result.dart';
+import '../domain/register_result.dart';
 import 'auth_json.dart';
 
 /// [AuthRepository] backed by the FastAPI server (docs/api.md).
@@ -40,6 +41,32 @@ class HttpAuthRepository implements AuthRepository {
           statusCode: response.statusCode,
         );
     }
+  }
+
+  @override
+  Future<RegisterResult> register({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    final response = await _api.post(
+      '/auth/register',
+      body: {'email': email, 'password': password, 'full_name': fullName},
+      authenticated: false,
+    );
+    final body = response.body;
+    final code = body is Map<String, Object?> ? body['error'] : null;
+    return switch ((response.statusCode, code)) {
+      (201, _) => const RegisterCreated(),
+      (409, _) => const RegisterEmailTaken(),
+      (422, 'not_a_university_email') => const RegisterNotUniversityEmail(),
+      (422, 'password_too_short') => const RegisterBadPassword(tooShort: true),
+      (422, 'password_too_long') => const RegisterBadPassword(tooShort: false),
+      _ => throw UnexpectedResponseException(
+        'Unexpected register answer ${response.statusCode}: $body',
+        statusCode: response.statusCode,
+      ),
+    };
   }
 
   // docs/api.md: 423 carries a `retry_after_minutes` body field and the

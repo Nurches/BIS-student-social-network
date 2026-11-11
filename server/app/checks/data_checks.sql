@@ -91,3 +91,15 @@ SELECT n.notification_id, n.event_id, e.status
 FROM notification n
 JOIN event e ON e.event_id = n.event_id
 WHERE e.status <> 'published';
+
+-- @check C10
+-- @title Nobody holds an active registration for an unpublished event
+-- @requirement FR-03
+-- @sensitive false
+-- Only a published event takes registrations; a row here is a draft or cancelled event with confirmed or waiting students.
+SELECT r.registration_id, r.student_id, e.event_id, e.title,
+       e.status AS event_status, r.status AS registration_status
+FROM registration r
+JOIN event e ON e.event_id = r.event_id
+WHERE r.status IN ('confirmed', 'waiting_list')
+  AND e.status <> 'published';

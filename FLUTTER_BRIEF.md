@@ -166,6 +166,13 @@ Server does the limit check inside a transaction with `SELECT ... FOR UPDATE`, s
 
 Four screens. Nothing else for now.
 
+> **MVP extension (owner's decision, 11 November 2026):** so that the app can be used freely
+> beyond the demo, it now has a bottom navigation with **Feed · Explore · My events ·
+> Profile**, a **sign-up** screen, a **community** page (follow / unfollow, its open events)
+> and a **notifications inbox** (bell with an unread badge on the feed). The constraints of
+> §8 still apply to every screen; the event detail screen is unchanged in layout and keeps
+> its 320 dp test. API: `docs/api.md`, "Communities and the student's own lists".
+
 **Login.** Email + password. Inline errors. Lockout message with minutes left.
 
 **Feed.** List of event cards. Each card shows: community name, title, start date, **deadline**, **free places**. Pull to refresh. Empty state when the student follows nothing yet.

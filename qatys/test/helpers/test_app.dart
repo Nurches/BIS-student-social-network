@@ -51,6 +51,9 @@ class SwitchableEventRepository implements EventRepository {
   @override
   Future<CancelResult> cancelRegistration(int eventId) =>
       _call(() => inner.cancelRegistration(eventId));
+
+  @override
+  Future<List<Event>> fetchMyEvents() => _call(inner.fetchMyEvents);
 }
 
 class FakePushService implements PushService {
@@ -111,12 +114,14 @@ class TestApp {
     this.signedIn = true,
     SwitchableEventRepository? events,
     PushService? push,
+    this.config = const AppConfig(apiBaseUrl: '', useMockApi: true),
   }) : events = events ?? SwitchableEventRepository(),
        push = push ?? const NoopPushService();
 
   final bool signedIn;
   final SwitchableEventRepository events;
   final PushService push;
+  final AppConfig config;
   final store = InMemoryStore();
   final tokens = RecordingDeviceTokens();
   late final InMemorySessionStorage sessions = InMemorySessionStorage(
@@ -126,14 +131,14 @@ class TestApp {
   );
 
   List<Override> get overrides => [
-    appConfigProvider.overrideWithValue(
-      const AppConfig(apiBaseUrl: '', useMockApi: true),
-    ),
+    appConfigProvider.overrideWithValue(config),
     sessionStorageProvider.overrideWithValue(sessions),
     authRepositoryProvider.overrideWithValue(
       MockAuthRepository(latency: Duration.zero),
     ),
     eventRepositoryProvider.overrideWithValue(events),
+    // Communities and the inbox share the same in-memory server.
+    mockServerProvider.overrideWithValue(events.inner),
     localStoreProvider.overrideWithValue(store),
     pushServiceProvider.overrideWithValue(push),
     deviceTokenRepositoryProvider.overrideWithValue(tokens),
@@ -145,6 +150,23 @@ class TestApp {
     );
     await tester.pumpAndSettle();
   }
+}
+
+/// A tall phone, so a whole list of cards is built at once (lists build
+/// only what is on screen).
+void useTallPhone(WidgetTester tester) {
+  tester.view
+    ..physicalSize = const Size(412, 2400) * 2
+    ..devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
+}
+
+/// Opens a bottom tab of the signed-in app.
+Future<void> openTab(WidgetTester tester, String label) async {
+  await tester.tap(
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+  );
+  await tester.pumpAndSettle();
 }
 
 /// A 5-inch phone: 320 × 568 dp (brief §8).

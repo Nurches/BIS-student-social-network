@@ -57,6 +57,16 @@ FeedPage feedPageFromJson(Map<String, Object?> json) {
   );
 }
 
+/// `{ "items": [Event, ...] }` of `GET /me/registrations` and
+/// `GET /communities/{id}/events` (docs/api.md).
+List<Event> eventListFromJson(Map<String, Object?> json) => [
+  for (final item in _field<List<Object?>>(json, 'items'))
+    if (item is Map<String, Object?>)
+      eventFromJson(item)
+    else
+      throw FormatException('Event item is not an object: $item'),
+];
+
 /// Body of `200` from `POST /events/{id}/registrations` (docs/api.md).
 RegistrationWaitListed waitListedFromJson(Map<String, Object?> json) =>
     RegistrationWaitListed(position: _field<int>(json, 'position'));

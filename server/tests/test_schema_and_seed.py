@@ -71,8 +71,8 @@ def test_seed_builds_a_demo_where_the_team_starts_unregistered(
     seed.seed(db, "qatys2026", rounds=4)
 
     assert db.execute("SELECT COUNT(*) AS n FROM student").fetchone()["n"] == 10
-    assert db.execute("SELECT COUNT(*) AS n FROM community").fetchone()["n"] == 3
-    assert db.execute("SELECT COUNT(*) AS n FROM event").fetchone()["n"] == 6
+    assert db.execute("SELECT COUNT(*) AS n FROM community").fetchone()["n"] == 5
+    assert db.execute("SELECT COUNT(*) AS n FROM event").fetchone()["n"] == 8
 
     login = client.post(
         "/api/v1/auth/login", json={"email": "nurassyl@kbtu.kz", "password": "qatys2026"}
@@ -81,7 +81,7 @@ def test_seed_builds_a_demo_where_the_team_starts_unregistered(
     feed = client.get("/api/v1/feed", headers=headers).json()["items"]
 
     titles = [e["title"] for e in feed]
-    assert titles == ["Flutter workshop", "CV clinic", "IT Career Day", "Autumn Hackathon 2026"]
+    assert titles == ["Flutter workshop", "CV clinic", "IT Job Fair", "Autumn Hackathon 2026"]
     assert all(e["my_status"] is None for e in feed)
     by_title = {e["title"]: e for e in feed}
     assert by_title["Flutter workshop"]["free_places"] == 1

@@ -59,6 +59,13 @@ class HttpEventRepository implements EventRepository {
     };
   }
 
+  @override
+  Future<List<Event>> fetchMyEvents() async {
+    final response = await _api.get('/me/registrations');
+    _expect(response, 200);
+    return _parse(() => eventListFromJson(response.json));
+  }
+
   String? _errorCode(ApiResponse response) {
     final body = response.body;
     return body is Map<String, Object?> ? body['error'] as String? : null;

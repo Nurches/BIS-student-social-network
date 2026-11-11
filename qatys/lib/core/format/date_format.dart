@@ -38,3 +38,20 @@ String timeLeft(DateTime deadline, DateTime now) {
 }
 
 String _plural(int n, String unit) => '$n $unit${n == 1 ? '' : 's'}';
+
+/// `just now`, `25 min ago`, `3 h ago`, `yesterday`, `4 days ago`, or the date.
+String timeAgo(DateTime value, DateTime now) {
+  final ago = now.difference(value);
+  if (ago.inMinutes < 1) return 'just now';
+  if (ago.inHours < 1) return '${ago.inMinutes} min ago';
+  if (ago.inDays < 1) return '${ago.inHours} h ago';
+  if (ago.inDays == 1) return 'yesterday';
+  if (ago.inDays < 7) return '${ago.inDays} days ago';
+  return formatDateTime(value);
+}
+
+/// Less than a day left: the card shows the deadline in red.
+bool isClosingSoon(DateTime deadline, DateTime now) {
+  final left = deadline.difference(now);
+  return left > Duration.zero && left < const Duration(hours: 24);
+}

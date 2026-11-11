@@ -10,6 +10,7 @@ void main() {
   testWidgets('cards show community, title, start, deadline and free places', (
     tester,
   ) async {
+    useTallPhone(tester);
     await TestApp().pump(tester);
 
     final card = find.ancestor(
@@ -35,6 +36,7 @@ void main() {
   testWidgets('feed is ordered by deadline and hides closed events', (
     tester,
   ) async {
+    useTallPhone(tester);
     await TestApp().pump(tester);
 
     final titles = tester
@@ -53,6 +55,7 @@ void main() {
   testWidgets('NFR-01: a saved feed is shown at once when the server is down', (
     tester,
   ) async {
+    useTallPhone(tester);
     final app = TestApp();
     await app.pump(tester); // first launch fills the cache
 
@@ -66,12 +69,13 @@ void main() {
     expect(find.textContaining('Saved events from'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
     expect(find.text('Flutter workshop'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Autumn Hackathon 2026'), 200);
+    expect(find.text('Autumn Hackathon 2026'), findsOneWidget);
   });
 
   testWidgets('first launch without a connection offers a retry', (
     tester,
   ) async {
+    useTallPhone(tester);
     final app = TestApp(events: SwitchableEventRepository()..offline = true);
     await app.pump(tester);
 
@@ -87,6 +91,7 @@ void main() {
   testWidgets('refresh button and pull to refresh reload the feed', (
     tester,
   ) async {
+    useTallPhone(tester);
     final app = TestApp();
     await app.pump(tester);
     app.events.inner.takePlaceByAnotherStudent(6); // the last place is gone
@@ -105,12 +110,14 @@ void main() {
   });
 
   testWidgets('empty state when there is nothing to show', (tester) async {
+    useTallPhone(tester);
     await TestApp(events: _EmptyFeed()).pump(tester);
 
     expect(find.text('No upcoming events'), findsOneWidget);
   });
 
   testWidgets('tapping a card opens the event detail', (tester) async {
+    useTallPhone(tester);
     await TestApp().pump(tester);
 
     await tester.tap(find.text('IT Career Day'));

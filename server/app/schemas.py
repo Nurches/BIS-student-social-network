@@ -9,6 +9,27 @@ class _Body(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+# ---------- errors (docs/api.md, "Conventions") ----------
+
+
+class ValidationIssue(BaseModel):
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ErrorOut(BaseModel):
+    """Every error body: `{ "error": "<code>" }`, plus the optional fields below."""
+
+    error: str = Field(description="Stable snake_case code the client switches on")
+    retry_after_minutes: int | None = Field(
+        default=None, description="423 `account_locked` only: minutes left, never 0"
+    )
+    detail: list[ValidationIssue] | None = Field(
+        default=None, description="422 `validation_failed` only: what did not match"
+    )
+
+
 # ---------- auth ----------
 
 
@@ -129,3 +150,35 @@ class DataChecksReport(BaseModel):
     duration_ms: int
     summary: DataChecksSummary
     checks: list[DataCheckResult]
+
+
+# ---------- communities and the student's own lists (MVP extension) ----------
+
+
+class CommunityOut(BaseModel):
+    community_id: int
+    name: str
+    description: str | None
+    is_confirmed: bool = Field(description="Confirmed by the Student Union: may publish (BR-01)")
+    subscriber_count: int
+    upcoming_events: int = Field(description="Published events whose deadline has not passed")
+    is_subscribed: bool
+
+
+class EventListResponse(BaseModel):
+    items: list[EventOut]
+
+
+class NotificationOut(BaseModel):
+    notification_id: int
+    kind: Literal["event_published", "waiting_list_promoted"]
+    event_id: int
+    event_title: str
+    community_name: str
+    created_at: AwareDatetime
+    is_read: bool
+
+
+class NotificationsResponse(BaseModel):
+    items: list[NotificationOut]
+    unread_count: int

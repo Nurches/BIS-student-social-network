@@ -240,6 +240,7 @@ def test_seeded_database_passes_every_check(seeded: psycopg.Connection, client: 
     assert response.status_code == 200
     body = response.json()
     total = len(SHIPPED)
+    assert total >= 10 and "C10" in [c.id for c in SHIPPED]  # Laila's C10 (Week 11) included
     assert body["summary"] == {"total": total, "passed": total, "failed": 0, "errors": 0}
     assert [c["id"] for c in body["checks"]] == [c.id for c in SHIPPED]
     assert body["duration_ms"] < 5000
@@ -284,6 +285,14 @@ VIOLATIONS = {
             f"SELECT s.student_id, e.event_id {DEBATE} AND s.email = 'akbota@kbtu.kz'"
         ],
         "draft",
+    ),
+    # Week 11, Laila's C10: a draft event cannot hold registrations (FR-03).
+    "C10": (
+        [
+            "INSERT INTO registration (student_id, event_id, status) "
+            f"SELECT s.student_id, e.event_id, 'confirmed' {DEBATE} AND s.email = 'akbota@kbtu.kz'"
+        ],
+        "Debate tournament",
     ),
 }
 
@@ -331,7 +340,7 @@ PROTECTED = {
         "event",
         "chk_deadline_before_start",
         "UPDATE event SET registration_deadline = starts_at + INTERVAL '1 hour' "
-        "WHERE title = 'IT Career Day'",
+        "WHERE title = 'Autumn Hackathon 2026'",
     ),
 }
 
@@ -419,7 +428,7 @@ def test_fail_shows_count_up_to_20_rows_and_iso_timestamps(
 ) -> None:
     client = custom_client(
         block("C01", "SELECT g AS n FROM generate_series(1, 25) AS g;")  # noqa: S608
-        + block("C02", "SELECT title, starts_at FROM event WHERE title = 'IT Career Day';")
+        + block("C02", "SELECT title, starts_at FROM event WHERE title = 'Autumn Hackathon 2026';")
         + block("C03", "SELECT 1 FROM nowhere;")
         + "-- @check C04\n-- @requirement FR-03\n-- @sensitive false\nSELECT 1;\n"
     )

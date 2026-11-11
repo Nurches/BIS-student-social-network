@@ -4,6 +4,7 @@ import '../../../core/storage/local_store.dart';
 import '../../push/presentation/push_controller.dart';
 import '../data/auth_providers.dart';
 import '../domain/login_result.dart';
+import '../domain/register_result.dart';
 import '../domain/session.dart';
 import '../domain/student.dart';
 
@@ -50,6 +51,29 @@ class SessionController extends AsyncNotifier<Session?> {
       state = AsyncData(result.session);
     }
     return result;
+  }
+
+  /// Creates the account and signs in with it at once: [RegisterSignedIn].
+  /// [RegisterCreated] means the account exists but the sign-in did not work.
+  Future<RegisterResult> register({
+    required String email,
+    required String password,
+    required String fullName,
+  }) async {
+    final trimmedEmail = email.trim();
+    if (!isUniversityEmail(trimmedEmail)) {
+      return const RegisterNotUniversityEmail();
+    }
+    final created = await ref
+        .read(authRepositoryProvider)
+        .register(
+          email: trimmedEmail,
+          password: password,
+          fullName: fullName.trim(),
+        );
+    if (created is! RegisterCreated) return created;
+    final login = await this.login(email: trimmedEmail, password: password);
+    return login is LoginSucceeded ? const RegisterSignedIn() : created;
   }
 
   bool _loggingOut = false;

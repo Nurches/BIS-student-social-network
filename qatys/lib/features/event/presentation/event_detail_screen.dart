@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/date_format.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/ui.dart';
+import '../../community/presentation/community_screen.dart';
 import '../../feed/presentation/feed_controller.dart';
 import '../../sync/domain/pending_action.dart';
 import '../../sync/presentation/pending_actions_controller.dart';
@@ -78,8 +81,39 @@ class _Body extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(event.communityName, style: theme.textTheme.titleSmall),
-                const SizedBox(height: 4),
+                // The community opens its own page: follow it from there.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          CommunityScreen(communityId: event.communityId),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CommunityAvatar(
+                          communityId: event.communityId,
+                          name: event.communityName,
+                          size: 24,
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            event.communityName,
+                            style: theme.textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, size: 18),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
                 Text(
                   event.title,
                   style: theme.textTheme.headlineSmall,
@@ -94,6 +128,11 @@ class _Body extends ConsumerWidget {
                       '${formatDateTime(event.registrationDeadline)} '
                       '(${timeLeft(event.registrationDeadline, now)})',
                   key: const ValueKey('deadline'),
+                  highlight:
+                      isClosingSoon(event.registrationDeadline, now) ||
+                          event.isDeadlinePassed(now)
+                      ? AppTheme.urgent
+                      : null,
                 ),
                 _Fact(
                   icon: Icons.event_seat_outlined,
@@ -102,6 +141,7 @@ class _Body extends ConsumerWidget {
                       ? 'None — waiting list open'
                       : '${event.freePlaces} of ${event.participantLimit}',
                   key: const ValueKey('free-places'),
+                  highlight: event.isFull ? AppTheme.urgent : null,
                 ),
                 _Fact(
                   icon: Icons.schedule,
@@ -114,6 +154,11 @@ class _Body extends ConsumerWidget {
                     label: 'Where',
                     value: location,
                   ),
+                const SizedBox(height: 8),
+                CapacityBar(
+                  freePlaces: event.freePlaces,
+                  limit: event.participantLimit,
+                ),
               ],
             ),
           ),
@@ -129,32 +174,39 @@ class _Body extends ConsumerWidget {
               ),
             ),
           ),
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // The answer to the last tap sits right above the button: a
-                // snackbar would cover the button in the bottom third.
-                if (state.message case final message?) ...[
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      message,
-                      key: const ValueKey('action-message'),
-                      style: theme.textTheme.bodyMedium,
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerLowest,
+              border: Border(
+                top: BorderSide(color: theme.colorScheme.outlineVariant),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The answer to the last tap sits right above the button: a
+                  // snackbar would cover the button in the bottom third.
+                  if (state.message case final message?) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        message,
+                        key: const ValueKey('action-message'),
+                        style: theme.textTheme.bodyMedium,
+                      ),
                     ),
+                    const SizedBox(height: 8),
+                  ],
+                  _Action(
+                    state: state,
+                    pending: pending,
+                    now: now,
+                    eventId: eventId,
                   ),
-                  const SizedBox(height: 8),
                 ],
-                _Action(
-                  state: state,
-                  pending: pending,
-                  now: now,
-                  eventId: eventId,
-                ),
-              ],
+              ),
             ),
           ),
         ],
@@ -168,12 +220,16 @@ class _Fact extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    this.highlight,
     super.key,
   });
 
   final IconData icon;
   final String label;
   final String value;
+
+  /// Red for a deadline under a day and for a full event.
+  final Color? highlight;
 
   @override
   Widget build(BuildContext context) {
@@ -183,8 +239,22 @@ class _Fact extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 20),
-          const SizedBox(width: 8),
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: (highlight ?? theme.colorScheme.primary).withValues(
+                alpha: 0.12,
+              ),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 17,
+              color: highlight ?? theme.colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Text.rich(
               TextSpan(
@@ -193,7 +263,13 @@ class _Fact extends StatelessWidget {
                     text: '$label: ',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  TextSpan(text: value),
+                  TextSpan(
+                    text: value,
+                    style: TextStyle(
+                      color: highlight,
+                      fontWeight: highlight == null ? null : FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
               style: theme.textTheme.bodyMedium,
@@ -262,7 +338,11 @@ class _Action extends ConsumerWidget {
       RegistrationState.registered => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _Status(icon: Icons.check_circle, text: 'Registered ✓'),
+          const _Status(
+            icon: Icons.check_circle,
+            text: 'Registered ✓',
+            tone: _Status.confirmed,
+          ),
           if (!started) ...[
             const SizedBox(height: 8),
             secondary(
@@ -277,6 +357,7 @@ class _Action extends ConsumerWidget {
         children: [
           _Status(
             icon: Icons.hourglass_top,
+            tone: _Status.waiting,
             text: event.waitingPosition == null
                 ? 'You are on the waiting list.'
                 : 'You are number ${event.waitingPosition} on the waiting list.',
@@ -325,32 +406,43 @@ class _Action extends ConsumerWidget {
 }
 
 class _Status extends StatelessWidget {
-  const _Status({required this.icon, required this.text});
+  const _Status({required this.icon, required this.text, this.tone});
 
   final IconData icon;
   final String text;
 
+  /// Green for a confirmed place, amber for the waiting list.
+  final ({Color background, Color foreground})? tone;
+
+  static const confirmed = (
+    background: Color(0xFFDDF3E4),
+    foreground: Color(0xFF14532D),
+  );
+  static const waiting = (
+    background: Color(0xFFFFF1D6),
+    foreground: Color(0xFF7A4B00),
+  );
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final background = tone?.background ?? colors.secondaryContainer;
+    final foreground = tone?.foreground ?? colors.onSecondaryContainer;
     return Container(
       constraints: const BoxConstraints(minHeight: 48),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: background,
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
-          Icon(icon, color: colors.onSecondaryContainer),
+          Icon(icon, color: foreground),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                color: colors.onSecondaryContainer,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
             ),
           ),
         ],

@@ -1,6 +1,6 @@
 # Roadmap to Week 15 — Qatys (BIS Student Social Network)
 
-**Date:** 3 November 2026 (Week 10)
+**Date:** 3 November 2026 (Week 10), updated 10 November 2026 (Week 11)
 **Owner:** Nurassyl Turarbek (Application & Development)
 **Reads with:** `docs/project-status.md` (where we are), `FLUTTER_BRIEF.md` (client spec), `docs/api.md`, `docs/schema.sql`, `docs/requirements.md`
 **Audience:** the coding agent that implements this plan, and the team
@@ -42,10 +42,13 @@ What "finished" means for the course (from the instructor's brief), and how we p
 
 ## 2. Current state (summary of `project-status.md`)
 
-- Client steps 1–3 done: architecture, data layer with mock + HTTP, login with lockout display. 46 tests pass.
-- **Backend not started.** This is the critical path. Push (FR-01) and every real demo depend on it.
-- Known contract gaps and bugs: device token storage, missing endpoints/bodies, re-registration hits `uq_registration`, feed cursor bug, timestamps without time zone.
-- Two items the team promised for Week 10 in Task 09 are still open: **race test for the last place** and **duplicate notifications**. They are scheduled in M1/M3 below and must be shown at the next check.
+**Week 11:** M0–M6 are implemented, tested and deployed (Render + Neon); a real push reached
+an iPhone. This week: TestFlight on three iPhones, the Qatys icon, error responses in
+Swagger, the members' Week 11 artifacts, reseed safety and the demo runbook. Details and
+test counts: `docs/project-status.md`.
+
+*Week 10 starting point (for history):* client steps 1–3 done, backend not started; the race
+test and duplicate notifications were promised for Week 10 (both delivered).
 
 ---
 
@@ -53,7 +56,7 @@ What "finished" means for the course (from the instructor's brief), and how we p
 
 | Question | Decision | Why |
 |---|---|---|
-| Demo platform | **Android APK** is primary. Flutter Web only if it costs under half a day; push is not required on Web. | Target user is a student with a cheap Android phone; FCM on Android is the simplest path. |
+| Demo platform | **iPhone, installed through TestFlight** (owner's decision 3 Nov, PM agreed 4 Nov). The Android build stays configured but is not a deliverable. Flutter Web only if it costs under half a day. | The team's demo phones are iPhones; one Flutter code base serves both platforms. Push on iPhone goes FCM → APNs and was proven on a real device. |
 | Admin publishing | **No admin screen in the app.** Admin publishes through the server's Swagger UI (`/docs`) or a one-file seed/publish script. A tiny HTML admin page is a stretch goal (M7). | Admin side is out of the client scope; Swagger is free, visible and demonstrates the API. |
 | Lockout rule | Attempts 1–5 with a wrong password return **401**. The **5th** failure within 10 minutes sets `locked_until = now() + 15 min`. Any login during the lock returns **423** with `retry_after_minutes`, even with the correct password. A successful login resets the counter. | Matches NFR-02 wording "lock after 5 failed attempts". Test cases and requirements must be updated to say the same. |
 | Re-registration after cancel | Server **updates the existing row** (`cancelled → confirmed/waiting_list`), never inserts a second one. | Fixes the `uq_registration` bug without dropping the constraint. |
@@ -62,7 +65,7 @@ What "finished" means for the course (from the instructor's brief), and how we p
 | Hosting | FastAPI on **Render** (free web service), PostgreSQL on **Neon** or Render Postgres. | Free, enough for a demo. Free tier sleeps, so the demo checklist includes a warm-up. |
 | State management | Riverpod (already in use). | Already decided in code. |
 
-Out of scope until after Week 15: chat, comments, reactions, profile editing, friends, event editing/cancelling flows, moderator endpoints, iOS push, email verification sending (account creation can mark email as verified for the demo — leave `TODO(confirm)`).
+Out of scope until after Week 15: chat, comments, reactions, profile editing, friends, event editing/cancelling flows, moderator endpoints, Android push (configured, untested), email verification sending (account creation can mark email as verified for the demo — leave `TODO(confirm)`).
 
 ---
 
@@ -147,11 +150,11 @@ server/
 
 - Security pass (input with Akbota's checklist, section 6): JWT secret from env, CORS restricted, request size limits, rate limit on `/auth/login`, no stack traces in production errors, passwords never logged.
 - NFR-01 check: a small load test (`locust` or `k6`) on `/feed` with recorded p95; if 1000 concurrent users is unrealistic on the free tier, record the measured number honestly and explain the limitation.
-- Signed release APK on GitHub Releases with the live `API_BASE_URL`.
+- Release: **TestFlight** build with the live `API_BASE_URL` (`qatys/tool/build_ios_release.sh`, `docs/testflight.md`), installed on phones A, B and C.
 - `docs/deployment.md`: run the whole system from zero on another computer (Laila or Akbota executes it as evidence).
 - `docs/network-map.md` (Week 10 lecture, SIS 9): phone → HTTPS → FastAPI on Render → PostgreSQL; FCM path; one likely failure and what the user sees.
 
-**Accepted when:** a team member who did not write the code installs the APK and completes the main process; RTM rows move to Pass with dates.
+**Accepted when:** a team member who did not write the code installs the app from TestFlight and completes the main process; RTM rows move to Pass with dates.
 
 ### M7 — Stretch, only if M0–M6 are done
 
@@ -172,7 +175,7 @@ In priority order: tiny HTML admin page for publishing; Flutter Web build; simpl
 | Week 11 | Live server: Swagger, login from the app, race test green | M1 (+ M2 stretch) |
 | Week 12 | Live feed + register / waiting list / cancel with DB rows | M2, M3 |
 | Week 13 | Real push → tap → register on a real phone | M4 (+ M5 start) |
-| Week 14 | Offline handling, security pass, APK, deployment guide | M5, M6 |
+| Week 14 | Offline handling, security pass, TestFlight release, deployment guide | M5, M6 |
 | Week 15 | Final defence | freeze, rehearsal |
 
 Buffer: if M1 slips, M2 moves fully into Week 12 and M5 is reduced to reachability + logout only. **Push (M4) is never cut** — it is FR-01 and the reason the product exists.
@@ -186,10 +189,10 @@ The agent implements code; the other members own checkable artifacts that use th
 | Member | Area | Recurring artifact (updated every check) |
 |---|---|---|
 | Nurassyl Turarbek | Application & Development | Working milestone demo, commits, explanation of what AI generated, what was changed and how it was tested |
-| Taubay Laila | Data & Database | `docs/data_checks.sql` — integrity queries against the live DB (over-limit registrations, duplicates, orphan rows), results screenshots; executes `deployment.md` on her laptop |
-| Shpanova Madina | Testing & Integration | Test run sheet for TC-01…TC-08 on the real app (Pass/Fail, date), defect log, RTM status |
-| Nurkasymova Akbota | Architecture & Security | Role and security checklist (student cannot publish, password stored as hash, token required, lockout works), network map |
-| Ualikhan Gulnazym | Requirements & UX | User flow of the main process in Figma, one usability test with 2–3 students, 3 interface changes with before/after |
+| Taubay Laila | Data & Database | `server/app/checks/data_checks.sql` — 10 integrity checks (C01–C10) run live on `/data-checks`, results table + screenshot; C07 fix of the sample data; `faculty` table; executes `deployment.md` on her laptop (`docs/team/laila.md`) |
+| Shpanova Madina | Testing & Integration | `docs/test_cases_and_rtm.xlsx` — TC-01…TC-08 run by her (Swagger + her iPhone), U-01…U-04 with the original text, defect log D-01…D-03, RTM status (`docs/team/madina.md`) |
+| Nurkasymova Akbota | Architecture & Security | `docs/team/akbota/run_checks.sh` (security checks S-01…S-09 on the live API), findings A-01…A-07, roles matrix with *Implemented*, `network-map.md`; soft delete (`docs/team/akbota.md`) |
+| Ualikhan Gulnazym | Requirements & UX | User flow (FigJam), usability test with 3 students + SUS (`docs/team/gulnazym/`), 3 interface changes with before/after in Week 12 (`docs/team/gulnazym.md`) |
 
 Rule for every check: each member names one measurable task with a deadline and shows last week's result.
 
@@ -226,6 +229,9 @@ Fallback order if something fails live: second phone → recorded video of the s
 | NFR-01 on the free tier: target met up to ~60 heavy simulated users, ceiling ~20 requests/s (0.1 CPU); laptop: 1000 users, p95 30 ms | Medium | Reported honestly in `project-status.md` §3; scaling path: paid instance, more instances, feed cache |
 | `firebase_messaging` 17 deprecates the registration-token API (still works) | Low | After Week 15: move app and server to Firebase Installation IDs |
 | Login rate limit and FCM sender live in one server process | Low | Enough for one Render instance; several instances would need Redis |
+| TestFlight: a build can stay in "Processing", an invitation can go to the wrong Apple ID | Medium | Upload at least a day before a demo; `docs/testflight.md` "Known problems"; fallback order in §7 |
+| A reseed deletes every push token and every member's test rows | Medium | `docs/demo-runbook.md`: reseed only after the members' live runs and on the defence morning, then log out / in on every phone; `seed.py` refuses a remote database without `--live` and the typed database name |
+| Android pushes are untested (demo on iPhone only) | Low | Expected question; answer: one code base, Android configured (channel, icon), not demoed |
 
 ---
 

@@ -19,4 +19,8 @@ abstract interface class EventRepository {
 
   /// Cancels the student's own registration or waiting-list entry.
   Future<CancelResult> cancelRegistration(int eventId);
+
+  /// Events the student is confirmed for or waiting for, past ones included
+  /// (`GET /me/registrations`).
+  Future<List<Event>> fetchMyEvents();
 }

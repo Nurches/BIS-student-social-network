@@ -131,16 +131,24 @@ INSERT INTO event (community_id, title, description, location, starts_at, regist
  (2, 'IT Career Day',         'Meeting with 12 companies', 'Main hall',
      NOW() + INTERVAL '7 days',  NOW() + INTERVAL '5 days', 200, 'published'),
  (1, 'Git workshop for first-years', 'Basics of version control', 'Block A, room 105',
-     NOW() + INTERVAL '3 days',  NOW() - INTERVAL '1 day',  25, 'published'),
+     NOW() + INTERVAL '3 days',  NOW() - INTERVAL '1 day',   2, 'published'),
  (3, 'Debate tournament', 'Draft, not published yet', 'Block B',
      NOW() + INTERVAL '21 days', NOW() + INTERVAL '18 days', 16, 'draft');
 
+-- Week 11 (found by data check C07): student 1 used to wait for IT Career Day
+-- while 199 of its 200 places were free, which breaks FR-03. Student 1 is now
+-- confirmed there, and the waiting-list example moved to the Git workshop,
+-- which is full (2 of 2).
+-- TODO(confirm): Laila may prefer making IT Career Day full instead.
 INSERT INTO registration (student_id, event_id, status) VALUES
  (2, 1, 'confirmed'),
  (3, 1, 'confirmed'),
  (4, 1, 'confirmed'),
  (5, 2, 'confirmed'),
- (1, 2, 'waiting_list');
+ (1, 2, 'confirmed'),
+ (2, 3, 'confirmed'),
+ (3, 3, 'confirmed'),
+ (4, 3, 'waiting_list');
 
 -- One notification per subscriber for each published event (FR-01).
 INSERT INTO notification (student_id, event_id, sent_at)
@@ -181,7 +189,7 @@ ORDER BY e.event_id;
 SELECT r.student_id,
        ROW_NUMBER() OVER (ORDER BY r.updated_at, r.registration_id) AS position
 FROM registration r
-WHERE r.event_id = 2 AND r.status = 'waiting_list';
+WHERE r.event_id = 3 AND r.status = 'waiting_list';
 
 -- Check that the unique constraints really work (each of these must fail):
 -- INSERT INTO registration (student_id, event_id) VALUES (2, 1);

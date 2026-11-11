@@ -5,10 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/theme/app_theme.dart';
 import '../data/mock_auth_repository.dart';
 import '../domain/login_result.dart';
 import '../domain/student.dart';
 import 'session_controller.dart';
+import 'sign_up_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -68,99 +70,117 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final useMockApi = ref.watch(appConfigProvider).useMockApi;
 
     return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: AutofillGroup(
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('Qatys', style: theme.textTheme.headlineLarge),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Sign in with your university account',
-                        style: theme.textTheme.bodyLarge,
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: _email,
-                        enabled: !_submitting,
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                        autocorrect: false,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(
-                          labelText: 'University email',
-                          hintText: 'name@kbtu.kz',
-                          border: OutlineInputBorder(),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            const BrandHeader(subtitle: 'All KBTU events in one feed'),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: AutofillGroup(
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text(
+                          'Welcome back',
+                          style: theme.textTheme.headlineSmall,
                         ),
-                        validator: _validateEmail,
-                      ),
-                      const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _password,
-                        enabled: !_submitting,
-                        obscureText: !_passwordVisible,
-                        autofillHints: const [AutofillHints.password],
-                        textInputAction: TextInputAction.done,
-                        onFieldSubmitted: (_) => _submit(),
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            tooltip: _passwordVisible
-                                ? 'Hide password'
-                                : 'Show password',
-                            icon: Icon(
-                              _passwordVisible
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: () => setState(
-                              () => _passwordVisible = !_passwordVisible,
+                        const SizedBox(height: 4),
+                        Text(
+                          'Sign in with your university account',
+                          style: theme.textTheme.bodyLarge,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _email,
+                          enabled: !_submitting,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          autocorrect: false,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(
+                            labelText: 'University email',
+                            hintText: 'name@kbtu.kz',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: _validateEmail,
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _password,
+                          enabled: !_submitting,
+                          obscureText: !_passwordVisible,
+                          autofillHints: const [AutofillHints.password],
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) => _submit(),
+                          decoration: InputDecoration(
+                            labelText: 'Password',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              tooltip: _passwordVisible
+                                  ? 'Hide password'
+                                  : 'Show password',
+                              icon: Icon(
+                                _passwordVisible
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () => setState(
+                                () => _passwordVisible = !_passwordVisible,
+                              ),
                             ),
                           ),
+                          validator: (value) => (value ?? '').isEmpty
+                              ? 'Enter your password'
+                              : null,
                         ),
-                        validator: (value) => (value ?? '').isEmpty
-                            ? 'Enter your password'
-                            : null,
-                      ),
-                      if (_error case final error?) ...[
-                        const SizedBox(height: 16),
-                        _ErrorBanner(message: error),
-                      ],
-                      const SizedBox(height: 24),
-                      FilledButton(
-                        onPressed: _submitting ? null : _submit,
-                        child: _submitting
-                            ? const SizedBox.square(
-                                dimension: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
+                        if (_error case final error?) ...[
+                          const SizedBox(height: 16),
+                          _ErrorBanner(message: error),
+                        ],
+                        const SizedBox(height: 24),
+                        FilledButton(
+                          onPressed: _submitting ? null : _submit,
+                          child: _submitting
+                              ? const SizedBox.square(
+                                  dimension: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : const Text('Sign in'),
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: _submitting
+                              ? null
+                              : () => Navigator.of(context).push(
+                                  MaterialPageRoute<void>(
+                                    builder: (_) => const SignUpScreen(),
+                                  ),
                                 ),
-                              )
-                            : const Text('Sign in'),
-                      ),
-                      if (useMockApi) ...[
-                        const SizedBox(height: 16),
-                        Text(
-                          'Demo mode: ${MockAuthRepository.students.first.email}'
-                          ' / ${MockAuthRepository.demoPassword}',
-                          style: theme.textTheme.bodyMedium,
-                          textAlign: TextAlign.center,
+                          child: const Text('New here? Create an account'),
                         ),
+                        if (useMockApi) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Demo mode: ${MockAuthRepository.students.first.email}'
+                            ' / ${MockAuthRepository.demoPassword}',
+                            style: theme.textTheme.bodyMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -222,6 +242,67 @@ class _ErrorBanner extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The blue header with the app icon, on the login and sign-up screens.
+class BrandHeader extends StatelessWidget {
+  const BrandHeader({required this.subtitle, super.key});
+
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, top + 20, 24, 22),
+      decoration: const BoxDecoration(
+        gradient: AppTheme.brandGradient,
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x40000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(22),
+              child: Image.asset(
+                'assets/icon/qatys_logo.png',
+                width: 64,
+                height: 64,
+                semanticLabel: 'Qatys',
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Qatys',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white70, fontSize: 15),
+          ),
+        ],
       ),
     );
   }

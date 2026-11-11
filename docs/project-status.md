@@ -1,6 +1,6 @@
 # Project Status — Qatys (BIS Student Social Network)
 
-**Date:** 3 November 2026 (Week 10)
+**Date:** 10 November 2026 (Week 11)
 **Prepared by:** Nurassyl Turarbek (Application & Development)
 **Repository:** https://github.com/Nurches/BIS-student-social-network
 **Plan:** [`docs/roadmap.md`](roadmap.md)
@@ -13,12 +13,13 @@
 |---|---|
 | Code for the roadmap | **M0–M6 implemented and tested.** M7 stretch: admin web page done |
 | Main process | Works end to end on a real server and a real PostgreSQL: publish → notification rows → register / waiting list / cancel → promotion. Shown over HTTP and with the app's real network code |
-| Tests | **193 automated tests, all passing:** 102 server (pytest, real PostgreSQL 16), 90 app (Flutter), 1 app ↔ live server contract test |
+| Tests | **263 automated tests, all passing:** 150 server (pytest, real PostgreSQL 16), 112 app (Flutter), 1 app ↔ live server contract test. The W11-9 patch (applied at the reseed) adds 11 server tests → 161 |
+| MVP | **Usable without help (11 Nov):** sign-up, Explore with follow / unfollow, community pages, My events, notifications inbox, profile; new visual design |
 | Quality gates | `ruff` and `flutter analyze`: 0 issues |
 | NFR-01 | Laptop: 1000 users, 0 errors, p95 30 ms. **Render free tier (0.1 CPU): meets the target up to ~60 simulated users (p95 1.1 s), saturates at ~20 requests/s** — see section 3 |
 | Live system | **Deployed:** API https://qatys-api.onrender.com (Render, Frankfurt), database on Neon (Frankfurt). **A real push reached a real iPhone** and opened the event |
-| What is left | Install on the other demo iPhones, team handover (section 6) |
-| Platform decision | **Demo on iPhone only, no Android APK** (owner's decision, 3 Nov). Changes roadmap §3 "Android APK is primary" and the M6 release — **needs the PM's agreement** |
+| What is left | TestFlight upload and install on phones B and C, the members' live runs, the reseed with schema v3, the backup video (section 6) |
+| Platform decision | **Demo on iPhone through TestFlight** — owner's decision 3 Nov, **agreed with the PM 4 Nov**; roadmap §3 and M6 updated. Android configured, not a deliverable |
 
 The Week 10 promises to the instructor are kept: the **race test for the last place** passes
 (also with 8 students for 1 place, 30 runs in a row), and **duplicate notifications** are
@@ -36,9 +37,9 @@ impossible by a database constraint.
 | M3 Detail and registration | ✅ Done | All four button states; register → cancel → register; waiting-list promotion |
 | M4 Push | ✅ Done on iPhone (Firebase + APNs) | Admin publish → push on a silent iPhone → tap opens the event |
 | M5 Reliability | ✅ Done | Offline queue, `/health` reachability, no endless spinners, full logout cleanup |
-| M6 Quality, security, release | ✅ Security pass, load test on Render, docs. Release: iPhone builds instead of the APK (pending PM agreement) | `deployment.md`, `network-map.md`, security tests |
+| M6 Quality, security, release | ✅ Security pass, load test on Render, docs. Release: TestFlight — build script ready, upload by the owner (W11-2) | `deployment.md`, `testflight.md`, `network-map.md`, security tests |
 | M7 Stretch | 🟡 Admin web page done (`/admin`); Flutter Web and analytics not started | — |
-| T1 Data checks page (tool) | ✅ Implemented and tested, not deployed yet | `/data-checks`, `test_data_checks.py`; spec `docs/tools/data-checks-spec.md` |
+| T1 Data checks page (tool) | ✅ Deployed: live run 10 Nov, 9 of 9 Pass on Neon; Laila, Madina, Akbota have access. C10 goes live with the Week 11 push | `/data-checks`, `test_data_checks.py`; spec `docs/tools/data-checks-spec.md` |
 
 ---
 
@@ -75,9 +76,9 @@ more than enough.
 | TC | Automated test | Manual check still needed |
 |---|---|---|
 | TC-01 push opens the event | `qatys/test/features/push/push_test.dart` | yes: real phone, silent mode |
-| TC-02 register while places are free | `test_registrations.py`, `event_detail_screen_test.dart` | on the installed APK |
-| TC-03 full → waiting list | same files | on the installed APK |
-| TC-06 lockout | `test_auth.py::test_tc06_lockout_after_5_failed_attempts` | on the installed APK |
+| TC-02 register while places are free | `test_registrations.py`, `event_detail_screen_test.dart` | on an iPhone (TestFlight) |
+| TC-03 full → waiting list | same files | on an iPhone (TestFlight) |
+| TC-06 lockout | `test_auth.py::test_tc06_lockout_after_5_failed_attempts` | on an iPhone (TestFlight), account `zhanel@` |
 | Race on the last place | `test_race.py` | two phones in class |
 | Direct API call cannot overbook | `test_registrations.py::test_direct_api_calls_cannot_overbook` | Swagger in class |
 
@@ -163,28 +164,50 @@ by luck.
 
 ---
 
-## 6. What the owner and the team still need to do
+## 6. Week 11 — tasks and real status
 
-| # | Task | Who | Time | Instructions |
-|---|---|---|---|---|
-| 1–3 | Neon database, Firebase (Android + iOS + APNs key), Render deploy | Nurassyl | — | ✅ done 3 Nov |
-| 4 | ~~Signed APK on GitHub Releases~~ — dropped: demo on iPhone only (needs PM agreement) | — | — | — |
-| 5 | Install on the other two demo iPhones (cable from the owner's Mac, or TestFlight) and run the full demo script | Nurassyl + Madina | 30 min | `qatys/README.md` |
-| 6 | Load test against Render | Nurassyl | — | ✅ done 3 Nov (section 3) |
-| 7 | Run the system from zero on another laptop (bus factor) | Laila or Akbota | 1 h | `deployment.md` |
-| 8 | TC-01…TC-08 on the installed APK, RTM → Pass with dates | Madina | — | section 3 above |
-| 9 | Integrity queries against the live DB (`docs/data_checks.sql`) | Laila | — | roadmap §6 |
-| 10 | Security checklist, final network map | Akbota | — | `network-map.md` draft |
-| 11 | Figma flow, usability test with 2–3 students | Gulnazym | — | roadmap §6 |
+Plan: `week11-agent-tasks` (W11-1…W11-11). The agent prepared each member's artifact; the
+person's part is marked and not faked. "Ready" = done in the repository, not yet pushed.
 
----
+| # | Task | Who | Status (10 Nov) |
+|---|---|---|---|
+| W11-1 | D-02 Qatys icon (app + push), icon test | Nurassyl | Ready. Push with the icon: after the TestFlight install |
+| W11-2 | TestFlight: mock-data banner, build script, `Info.plist`, `testflight.md`; bundle id → `com.qatys.app` | Nurassyl | Ready. **Owner:** new Firebase iOS app + plist + APNs key, upload, testers |
+| W11-3 | D-01 error responses in Swagger + tests | Nurassyl | Ready; on `/docs` after the push |
+| W11-4 | `/data-checks` live | Nurassyl → Laila | ✅ Live, 9/9 Pass; allow list checked (Laila, Madina, Akbota → 200) |
+| W11-5 | C07 fix, C10, deployment dry run | Laila | Ready. **Laila:** live run with 10 checks, `deployment.md` on her laptop |
+| W11-6 | Test sheet U-01…U-04, defect log, RTM | Madina | Ready. **Madina:** TC-02, TC-07, TC-08 and app cases herself; RTM statuses from her results only |
+| W11-7 | `run_checks.sh`, network map, roles matrix | Akbota | Ready; agent's run S-01…S-08 Pass. **Akbota:** her own run, agree map and matrix |
+| W11-8 | Usability kit + SUS calculator | Gulnazym | Ready (formula proven: all 3s → 50). **Gulnazym:** 3 sessions with real students |
+| W11-9 | Soft delete + `faculty` table (migration 003) | Akbota, Laila | Done as a patch (+10 tests); applied together with the reseed (`demo-runbook.md` §1), or moved to Week 12 if the reseed slips |
+| W11-10 | Reseed safety (`--live`), read-only grants, demo runbook | Nurassyl | Ready. **Owner:** reseed after the members' runs, re-login on 3 phones, backup video |
+| W11-11 | Documentation sync | all | Ready |
+
+### Defects, findings and test-case updates
+
+| ID | What | Status |
+|---|---|---|
+| D-01 | Swagger listed no error responses | Fixed (W11-3); Madina re-checks after the push |
+| D-02 | Flutter logo in the push | Fixed (W11-1); Madina re-checks on the TestFlight build |
+| D-03 | NFR-01 not met on free hosting | Open (hosting limit, section 3) |
+| C07 | Waiting list with free places in the sample data of `schema.sql` | Fixed (W11-5, sample data only) |
+| A-01 | No e-mail one-time code | Open: after Gulnazym's 3 UI changes; limitation if not done by Week 14 |
+| A-02 | Matrix: guest views announcements | Closed: matrix → No (login required, BR-01) |
+| A-03 | Moderator has no rights | Matrix says "After the defence" |
+| A-04 | No HSTS header | Open (optional) |
+| A-05 | Swagger public | Accepted for the demo |
+| A-06 | Architecture and network map outdated | Updated; waiting for Akbota's agreement |
+| A-07 | Firebase client configs in git | Accepted (public by design); optional key restriction |
+| U-01…U-04 | Test-case wording | Applied with the original text kept; Madina agrees them with Gulnazym |
 
 ## 7. Risks and limitations
 
 | Risk / limitation | Impact | Response |
 |---|---|---|
 | Android is configured but never built (APK dropped) | Low for the demo; expect the question "the target user has a cheap Android phone — why an iPhone demo?" | Answer: one Flutter code base, Android build configured; the demo uses the team's devices. Android pushes untested |
-| Three iPhones are needed for the demo script (phones A, B, C) | Medium | Install on teammates' iPhones by cable this week, or start TestFlight early (review takes ~1 day) |
+| Three iPhones are needed for the demo script (phones A, B, C) | Medium | TestFlight internal testing (no review); upload a day before; `docs/testflight.md` |
+| The reseed deletes every push token and the members' test rows | Medium | `docs/demo-runbook.md`: reseed only after their live runs; `seed.py` needs `--live` and the typed database name for a remote host |
+| Bundle id changed to `com.qatys.app` (App Store Connect record) | Medium until done | Firebase needs the new iOS app, plist and APNs key; the build script stops if the plist does not match |
 | Free hosting meets NFR-01 only up to ~60 heavy simulated users | Medium (grading question) | Measured and explained honestly (section 3); scaling path: paid instance, more instances, feed cache |
 | Render free tier sleeps (30–60 s first request) | Medium | Warm-up step in the demo script |
 | Push library deprecates the token API (still works) | Low | After Week 15: move to Firebase Installation IDs |
@@ -194,6 +217,52 @@ by luck.
 ---
 
 ## 8. Milestone log
+
+### MVP extension — 11 November 2026 (Week 11, owner's decision)
+
+Goal: the app can be used freely, not only in the scripted demo. A new student signs up,
+finds communities, follows them and gets their events and pushes.
+
+- **Server** (new files only, so the W11-9 patch still applies): `GET /communities`,
+  `PUT|DELETE /communities/{id}/subscription`, `GET /communities/{id}/events`,
+  `GET /me/registrations`, `GET /me/notifications`, `POST /me/notifications/read`
+  (`docs/api.md`). Every new route documents its errors in Swagger (checked by
+  `test_openapi_errors.py`). Seed: + *Sports Club* and *Volunteer Hub* with one event each, not
+  followed by the demo accounts (the demo feed is unchanged). 8 new tests.
+- **App:** bottom tabs Feed · Explore · My events · Profile; sign-up; community page; inbox with
+  an unread badge; feed greeting and filters; new theme from the icon (deep blue, amber
+  accent), event cards with community badge, red deadline under 24 h and a capacity bar; the
+  event detail keeps its layout and the 320 dp test. Mock mode shares one in-memory server, so
+  following a community changes the feed there too. 14 new tests.
+- **W11-9 patch** regenerated for this stage (`qatys_w11-9_soft_delete_faculty_after_mvp.patch`):
+  the new lists also hide soft-deleted rows (+1 test).
+- Not verified by a device build (owner builds through `tool/build_ios_release.sh`).
+
+### Week 11 — 10 November 2026
+
+- **W11-1 Icon (D-02):** Qatys icon designed in Figma, generated for every iOS and Android
+  size (`flutter_launcher_icons`, alpha removed for iOS); Android status-bar icon for pushes.
+  Test: no icon file equals the Flutter template.
+- **W11-2 TestFlight:** a release build without `API_BASE_URL` shows a red "DEMO DATA" strip
+  on every screen (4 tests); `qatys/tool/build_ios_release.sh` (URL check, Firebase plist ↔
+  bundle id check, analyze + tests, build number, `aps-environment = production` check);
+  `ITSAppUsesNonExemptEncryption = false`; iOS bundle id → `com.qatys.app`; `docs/testflight.md`.
+- **W11-3 Swagger errors (D-01):** every endpoint documents exactly the errors it can return,
+  with an example each; a static walk through the code proves "no more, no less" (20 tests).
+  `password_too_long` was missing from `api.md` — added.
+- **W11-4:** `/data-checks` confirmed live: 9 of 9 Pass on Neon.
+- **W11-5 Laila:** C07 defect fixed in the sample data (before: C07 Fail; after: C01–C10 Pass
+  on a fresh PostgreSQL 16); new check C10 with an injected-violation test; deployment dry run
+  from a fresh clone (fixes in `deployment.md`).
+- **W11-6 Madina, W11-7 Akbota, W11-8 Gulnazym:** workbooks, guides, `run_checks.sh`
+  (live: S-01…S-08 Pass; HSTS missing = A-04), network map for the iPhone demo, usability kit
+  and SUS calculator.
+- **W11-9:** soft delete and `faculty` table with migration 003 (+10 tests, migration on v2
+  equals a fresh v3) — kept as a patch until the reseed, because the live database is v2.
+- **W11-10:** `seed.py` refuses a remote database without `--live` and the typed name, grants
+  the read-only role again, seeds no "Career Day" look-alike (`IT Career Day` → `IT Job Fair`);
+  `docs/demo-runbook.md`.
+- **Tests:** server 135 (145 with W11-9), app 98, `ruff` and `flutter analyze` clean.
 
 ### T1 — Data checks page — implemented 3 November 2026 (Week 10)
 

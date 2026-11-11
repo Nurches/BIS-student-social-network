@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for pushes (D-02): the Qatys "Q", white on transparent.
+     Android tints it; colour is ignored. Drawn from the Figma frame qatys_notification. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <path
+        android:pathData="M45.19,18.75 A28.13,28.13 0 1,1 45.19,75 A28.13,28.13 0 1,1 45.19,18.75 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="10.5" />
+    <path
+        android:pathData="M56.25,58.13 L75,76.88"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeWidth="10.5" />
+</vector>

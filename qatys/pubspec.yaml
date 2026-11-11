@@ -51,6 +51,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  crypto: ^3.0.8
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -62,6 +64,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # In-app logo (login, profile): a 256 px copy of the launcher icon.
+  assets:
+    - assets/icon/qatys_logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
@@ -93,3 +99,13 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# D-02 (Week 11): the Qatys icon on the home screen and in every push.
+# Regenerate after changing the PNG:  dart run flutter_launcher_icons
+# Source: Figma file "Qatys — app icon" (frames qatys_icon, qatys_notification).
+flutter_launcher_icons:
+  image_path: "assets/icon/qatys_icon.png"
+  ios: true
+  remove_alpha_ios: true
+  android: "ic_launcher"
+  min_sdk_android: 21

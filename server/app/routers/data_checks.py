@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Request
 
 from ..config import Settings, get_settings
-from ..errors import ApiError
+from ..errors import ApiError, error_responses
 from ..schemas import DataChecksReport
 from ..security import CurrentStudent, current_student, data_checks_rate_limiter
 from ..services import data_checks
@@ -15,6 +15,7 @@ RUN_INTERVAL_SECONDS = 10
     "/admin/data-checks",
     response_model=DataChecksReport,
     summary="Run the data checks of app/checks/data_checks.sql (tool, not the product)",
+    responses=error_responses("unauthorized", "not_allowed", "too_many_requests"),
 )
 def run_data_checks(
     request: Request,
