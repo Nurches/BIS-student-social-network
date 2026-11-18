@@ -118,6 +118,9 @@ def test_event_object_matches_the_contract(data: Data) -> None:
         "free_places",
         "my_status",
         "waiting_position",
+        "status",
+        "previous_starts_at",
+        "cancelled_at",
     }
     assert item["community_name"] == "IT Club"
     assert item["free_places"] == 0

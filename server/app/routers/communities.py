@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends, Response
 
 from ..db import Pool, get_pool
 from ..errors import error_responses
-from ..schemas import CommunityOut, EventListResponse
+from ..schemas import (
+    CommunityOut,
+    CommunityRequestCreate,
+    CommunityRequestOut,
+    EventListResponse,
+)
 from ..security import CurrentStudent, current_student
 from ..services import social
 
@@ -24,6 +29,34 @@ def list_communities(
         return social.list_communities(conn, me.student_id)
 
 
+@router.post(
+    "",
+    status_code=201,
+    response_model=CommunityRequestOut,
+    summary="Request a new community (any student; a moderator approves it)",
+    responses=error_responses(
+        "unauthorized",
+        "community_name_taken",
+        "too_many_pending_requests",
+        "payload_too_large",
+        "validation_failed",
+    ),
+)
+def request_community(
+    body: CommunityRequestCreate,
+    me: CurrentStudent = Depends(current_student),
+    pool: Pool = Depends(get_pool),
+) -> dict:
+    """Week 12. Created `pending` with the caller as owner; it cannot publish
+    until a Student Union moderator approves it in /admin (BR-01), and then
+    the owner gets the `community_approved` push. At most 3 pending requests
+    per student; the name is unique ignoring case."""
+    with pool.connection() as conn:
+        return social.request_community(
+            conn, me.student_id, name=body.name, description=body.description
+        )
+
+
 @router.put(
     "/{community_id}/subscription",
     status_code=204,
@@ -35,7 +68,8 @@ def follow(
     me: CurrentStudent = Depends(current_student),
     pool: Pool = Depends(get_pool),
 ) -> Response:
-    """Its events appear in the feed, and the student gets a push for new ones."""
+    """Its events appear in the feed, and the student gets a push for new ones.
+    A pending or rejected community answers 404."""
     with pool.connection() as conn:
         social.subscribe(conn, me.student_id, community_id)
     return Response(status_code=204)

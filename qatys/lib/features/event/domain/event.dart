@@ -1,6 +1,10 @@
 /// The student's own relation to an event, always as reported by the server.
 enum RegistrationState { none, registered, waitingList }
 
+/// `status` of the Event object (schema v4). A cancelled event is still
+/// shown to the students registered for it, with the reason it is gone.
+enum EventStatus { published, cancelled }
+
 class Event {
   const Event({
     required this.id,
@@ -15,6 +19,9 @@ class Event {
     required this.freePlaces,
     required this.myState,
     this.waitingPosition,
+    this.status = EventStatus.published,
+    this.previousStartsAt,
+    this.cancelledAt,
   });
 
   final int id;
@@ -35,7 +42,17 @@ class Event {
   /// [RegistrationState.waitingList].
   final int? waitingPosition;
 
+  final EventStatus status;
+
+  /// The start before the organiser last moved the event; null if never moved.
+  final DateTime? previousStartsAt;
+  final DateTime? cancelledAt;
+
   bool get isFull => freePlaces <= 0;
+
+  bool get isCancelled => status == EventStatus.cancelled;
+
+  bool get isRescheduled => previousStartsAt != null;
 
   /// Used only to render a past deadline as closed (FR-02). Whether a
   /// registration succeeds is always decided by the server.

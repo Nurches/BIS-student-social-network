@@ -211,7 +211,7 @@ def test_framework_codes_are_in_the_catalog() -> None:
 
 
 def test_default_fastapi_422_schema_is_replaced_by_ours() -> None:
-    assert len(ROUTES) == 33
+    assert len(ROUTES) == 38  # Week 12: +5 (request, my requests, announcements, approve, reject)
     for path, route in ROUTES:
         (method,) = route.methods
         entry = OPENAPI["paths"][path][method.lower()]["responses"].get("422")

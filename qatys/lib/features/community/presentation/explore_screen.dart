@@ -5,6 +5,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/widgets/ui.dart';
 import '../domain/community.dart';
 import 'communities_controller.dart';
+import 'community_request_screen.dart';
 import 'community_screen.dart';
 import 'follow_button.dart';
 
@@ -20,6 +21,9 @@ class ExploreScreen extends ConsumerStatefulWidget {
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   String _query = '';
 
+  /// The name of the request just sent, for the confirmation notice.
+  String? _sent;
+
   @override
   Widget build(BuildContext context) {
     final communities = ref.watch(communitiesProvider);
@@ -32,15 +36,38 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           IconButton(
             tooltip: 'Refresh communities',
             icon: const Icon(Icons.refresh),
-            onPressed: controller.refresh,
+            onPressed: () {
+              ref.invalidate(myCommunityRequestsProvider);
+              controller.refresh();
+            },
           ),
         ],
       ),
+      // Week 12: any student can ask for a community.
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'request-community',
+        onPressed: () async {
+          final sent = await Navigator.of(context).push<CommunityRequest>(
+            MaterialPageRoute<CommunityRequest>(
+              builder: (_) => const CommunityRequestScreen(),
+            ),
+          );
+          // A notice in the list, not a snackbar: a snackbar shown during
+          // the page transition would be duplicated on every tab's Scaffold.
+          if (sent != null && mounted) setState(() => _sent = sent.name);
+        },
+        icon: const Icon(Icons.add_business_outlined),
+        label: const Text('Request a community'),
+      ),
       body: switch (communities) {
         AsyncData(:final value) => RefreshIndicator(
-          onRefresh: controller.refresh,
+          onRefresh: () {
+            ref.invalidate(myCommunityRequestsProvider);
+            return controller.refresh();
+          },
           child: _List(
             communities: value,
+            sent: _sent,
             query: _query,
             onQuery: (q) => setState(() => _query = q),
           ),
@@ -58,26 +85,32 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 }
 
-class _List extends StatelessWidget {
+class _List extends ConsumerWidget {
   const _List({
     required this.communities,
     required this.query,
     required this.onQuery,
+    this.sent,
   });
 
   final List<Community> communities;
+  final String? sent;
   final String query;
   final ValueChanged<String> onQuery;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final requests =
+        ref.watch(myCommunityRequestsProvider).value?.items ?? const [];
     final q = query.trim().toLowerCase();
     final matching = communities
         .where(
           (c) =>
-              q.isEmpty ||
-              c.name.toLowerCase().contains(q) ||
-              c.description.toLowerCase().contains(q),
+              // The student's own requests are listed under "My requests".
+              !c.isPending &&
+              (q.isEmpty ||
+                  c.name.toLowerCase().contains(q) ||
+                  c.description.toLowerCase().contains(q)),
         )
         .toList();
     final following = matching.where((c) => c.isSubscribed).toList();
@@ -85,7 +118,8 @@ class _List extends StatelessWidget {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(bottom: 24),
+      // Room for the floating "Request a community" button.
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
@@ -104,6 +138,40 @@ class _List extends StatelessWidget {
             title: 'Nothing found',
             message: 'Try another word, for example "club" or "career".',
           ),
+        if (sent case final name?)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Semantics(
+              liveRegion: true,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDDF3E4),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, color: Color(0xFF14532D)),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Request for "$name" sent. The Student Union will '
+                        'review it.',
+                        style: const TextStyle(
+                          color: Color(0xFF14532D),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (requests.isNotEmpty && q.isEmpty) ...[
+          SectionTitle('My requests (${requests.length})'),
+          for (final r in requests) CommunityRequestTile(request: r),
+        ],
         if (following.isNotEmpty) ...[
           SectionTitle('Following (${following.length})'),
           for (final c in following) CommunityTile(community: c),

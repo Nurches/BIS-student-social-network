@@ -55,3 +55,46 @@ bool isClosingSoon(DateTime deadline, DateTime now) {
   final left = deadline.difference(now);
   return left > Duration.zero && left < const Duration(hours: 24);
 }
+
+/// `NOV` — the month on the date tile of a card.
+String monthShort(DateTime value) =>
+    _months[value.toLocal().month - 1].toUpperCase();
+
+/// `Tue` — the weekday on the date tile of a card.
+String weekdayShort(DateTime value) => _weekdays[value.toLocal().weekday - 1];
+
+/// `10:00` in device time.
+String formatTime(DateTime value) {
+  final local = value.toLocal();
+  return '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
+}
+
+/// `Tuesday, 17 November` — the date under the greeting.
+String formatDayDate(DateTime value) {
+  const days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  final local = value.toLocal();
+  return '${days[local.weekday - 1]}, ${local.day} ${months[local.month - 1]}';
+}

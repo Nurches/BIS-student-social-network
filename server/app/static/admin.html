@@ -43,7 +43,8 @@
                background: var(--accent); color: #0b1220; font-weight: 800; }
   .topbar .spacer { flex: 1; }
   .topbar .who { font-size: .9rem; opacity: .9; text-align: right; }
-  .topbar button { color: inherit; border-color: rgba(255,255,255,.5); }
+  /* Log out: white on the blue bar (button.btn.secondary would make it blue on blue). */
+  .topbar button.btn, .topbar button.btn.secondary { color: #fff; background: transparent; border-color: rgba(255,255,255,.5); }
   .role { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 999px;
           background: var(--accent); color: #0b1220; font-size: .75rem; font-weight: 700; }
 
@@ -57,6 +58,12 @@
   nav.side button[aria-current="page"] { background: var(--brand-soft); color: var(--brand);
                                           font-weight: 700; }
   nav.side .ico { width: 20px; text-align: center; }
+  nav.side .nav-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 999px;
+    background: var(--warn); color: #fff; font-size: 12px; font-weight: 700; text-align: center; }
+  .request { display: grid; grid-template-columns: 1fr auto; gap: 12px 18px; align-items: start; }
+  .request .title { font-weight: 700; font-size: 16px; }
+  .request .reason { margin-top: 6px; }
+  @media (max-width: 640px) { .request { grid-template-columns: 1fr; } }
   main { padding: 24px 28px 64px; max-width: 1180px; width: 100%; }
   @media (max-width: 860px) {
     .layout { grid-template-columns: minmax(0, 1fr); }
@@ -215,6 +222,7 @@
   <div class="layout">
     <nav class="side" aria-label="Sections">
       <button data-view="overview"><span class="ico" aria-hidden="true">◎</span>Overview</button>
+      <button data-view="requests" data-moderator><span class="ico" aria-hidden="true">✉</span>Requests<span id="req-count" class="nav-count hidden"></span></button>
       <button data-view="communities"><span class="ico" aria-hidden="true">◇</span>Communities</button>
       <button data-view="events"><span class="ico" aria-hidden="true">▤</span>Events</button>
       <button data-view="publish"><span class="ico" aria-hidden="true">＋</span>Publish event</button>
@@ -251,6 +259,10 @@ const REASONS = {
   not_a_confirmed_admin: "You are not the owner of this community, or it is not confirmed yet (BR-01).",
   community_not_found: "This community no longer exists.",
   community_name_taken: "Another community already has this name.",
+  community_not_pending: "This request has already been reviewed.",
+  cannot_review_own_request: "You asked for this community yourself: another moderator must review it.",
+  start_in_the_past: "The new start time is in the past.",
+  event_started: "The event has already started and cannot be cancelled.",
   student_not_found: "No student with this email.",
   event_not_found: "This event no longer exists.",
   event_cancelled: "The event is cancelled and cannot be changed.",
@@ -263,6 +275,11 @@ const REASONS = {
   too_many_requests: "Too many attempts. Wait a minute.",
   invalid_credentials: "Wrong email or password.",
   payload_too_large: "The text is too long.",
+};
+const KINDS = {
+  event_published: ["New event", "b-mute"], waiting_list_promoted: ["Got a place", "b-info"],
+  event_cancelled: ["Cancelled", "b-err"], event_rescheduled: ["Moved", "b-warn"],
+  community_approved: ["Community approved", "b-ok"],
 };
 const STATE = {
   open: ["Open", "b-ok"], closed: ["Registration closed", "b-warn"], finished: ["Finished", "b-mute"],
@@ -442,6 +459,7 @@ async function start() {
     return;
   }
   me = res.data;
+  updateRequestCount();
   $("who-name").textContent = me.full_name + " · " + me.email;
   $("who-role").textContent = me.is_moderator ? "Moderator" : "Community owner";
   for (const b of document.querySelectorAll("nav.side [data-moderator]")) {
@@ -450,7 +468,8 @@ async function start() {
   $("login-view").classList.add("hidden");
   $("app").classList.remove("hidden");
   const fromHash = location.hash.slice(1);
-  go(VIEWS[fromHash] && (fromHash !== "students" || me.is_moderator) ? fromHash : "overview");
+  const moderatorOnly = ["students", "requests"];
+  go(VIEWS[fromHash] && (!moderatorOnly.includes(fromHash) || me.is_moderator) ? fromHash : "overview");
 }
 
 $("login").addEventListener("submit", async (e) => {
@@ -520,6 +539,8 @@ const VIEWS = {
         o.notifications_unsent ? o.notifications_unsent + " not delivered yet" : "nothing pending"),
     ];
     if (o.students !== null) tiles.push(tile("Students", o.students, o.devices + " phones signed in"));
+    if (me.is_moderator) tiles.unshift(tile("Community requests", o.pending_requests,
+      o.pending_requests ? "wait for your decision" : "nothing to review"));
 
     const upcoming = list.items.filter((e) => e.state === "open")
       .sort((a, b) => new Date(a.registration_deadline) - new Date(b.registration_deadline)).slice(0, 5);
@@ -533,11 +554,57 @@ const VIEWS = {
       !confirmed.length && !me.is_moderator
         ? h("div", { class: "notice warn", text: "None of your communities is confirmed yet, so you cannot publish. The Student Union confirms communities (BR-01)." })
         : null,
+      me.is_moderator && o.pending_requests
+        ? h("div", { class: "notice warn" }, plural(o.pending_requests, "community request waits", "community requests wait") + " for a moderator. ",
+            h("button", { class: "btn small", type: "button", text: "Review requests", onclick: () => go("requests") }))
+        : null,
       h("div", { class: "tiles" }, tiles),
       h("div", { class: "section-title" }, h("h3", { text: "Open for registration" }),
         h("button", { class: "btn secondary small", type: "button", text: "All events", onclick: () => go("events") })),
       upcoming.length ? h("div", { class: "events" }, upcoming.map(eventCard))
         : emptyBox("No event is open for registration right now."),
+    ];
+  },
+
+  async requests() {
+    if (!me.is_moderator) return h("div", { class: "notice err", text: REASONS.moderator_only });
+    const items = await load(PATHS.communities);
+    const pending = items.filter((c) => c.status === "pending")
+      .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    const reviewed = items.filter((c) => c.status !== "pending" && c.reviewed_at)
+      .sort((a, b) => new Date(b.reviewed_at) - new Date(a.reviewed_at)).slice(0, 10);
+    updateRequestCount(pending.length);
+    const card = (c) => h("article", { class: "card request" },
+      h("div", {},
+        h("div", { class: "title", text: c.name }),
+        h("div", { class: "muted small", text: "Asked by " + c.owner.full_name + " · " + c.owner.email + " · " + fmt(c.created_at) }),
+        c.description ? h("p", { text: c.description, style: "margin:8px 0 0" }) : h("p", { class: "muted small", text: "No description.", style: "margin:8px 0 0" })),
+      h("div", { class: "row-actions" },
+        c.owner.student_id === me.student_id
+          ? h("span", { class: "muted small", text: "Your own request: another moderator reviews it." })
+          : [
+            h("button", { class: "btn small", type: "button", text: "Approve",
+              onclick: (e) => busy(e.currentTarget, async () => {
+                const res = await call("POST", "/admin/communities/" + c.community_id + "/approve");
+                if (!res.ok) { toast(reason(res), false); return; }
+                toast("“" + c.name + "” is approved. " + c.owner.full_name + " gets a push and can publish now.");
+                refresh();
+              }) }),
+            h("button", { class: "btn secondary small", type: "button", text: "Reject", onclick: () => openRejectForm(c) }),
+          ]));
+    const history = (c) => h("tr", {},
+      h("td", {}, h("div", { style: "font-weight:700", text: c.name }), h("div", { class: "muted small", text: c.owner.email })),
+      h("td", {}, c.status === "confirmed" ? badge("Approved", "b-ok") : badge("Rejected", "b-err")),
+      h("td", { class: "small", text: c.reject_reason || "—" }),
+      h("td", { class: "small", text: fmt(c.reviewed_at) }));
+    return [
+      pageHead("Community requests", "Any student can ask for a community in the app. Approve it, and its owner gets a push and may publish (BR-01); reject it with a reason the student sees."),
+      // Spread: go() flattens only one level of arrays.
+      ...(pending.length ? pending.map(card) : [emptyBox("No request waits for a decision.")]),
+      reviewed.length ? h("div", { class: "section-title" }, h("h3", { text: "Recently reviewed" })) : null,
+      reviewed.length ? h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Community", "Decision", "Reason", "When"].map((t) => h("th", { scope: "col", text: t })))),
+        h("tbody", {}, reviewed.map(history)))) : null,
     ];
   },
 
@@ -555,7 +622,8 @@ const VIEWS = {
         h("td", {}, h("div", { style: "font-weight:700", text: c.name }),
           c.description ? h("div", { class: "muted small", text: c.description }) : null),
         h("td", {}, h("div", { text: c.owner.full_name }), h("div", { class: "muted small", text: c.owner.email })),
-        h("td", {}, c.is_confirmed ? badge("Confirmed", "b-ok") : badge("Awaiting confirmation", "b-warn")),
+        h("td", {}, c.status === "confirmed" ? badge("Confirmed", "b-ok")
+          : c.status === "rejected" ? badge("Rejected", "b-err") : badge("Request · waiting", "b-warn")),
         h("td", { class: "num", text: c.subscriber_count }),
         h("td", { class: "num", text: c.open_events + " / " + c.published_events }),
         h("td", {}, h("div", { class: "row-actions" },
@@ -679,8 +747,9 @@ const VIEWS = {
         text: e.title + " · " + e.community_name })));
     const rows = log.items.map((n) => h("tr", {},
       h("td", { class: "small", text: fmt(n.created_at) }),
-      h("td", {}, n.kind === "waiting_list_promoted" ? badge("Got a place", "b-info") : badge("New event", "b-mute")),
-      h("td", {}, h("div", { text: n.event_title }), h("div", { class: "muted small", text: n.community_name })),
+      h("td", {}, badge(...(KINDS[n.kind] || [n.kind, "b-mute"]))),
+      h("td", {}, h("div", { text: n.event_title || n.community_name }),
+        h("div", { class: "muted small", text: n.event_title ? n.community_name : "Community" })),
       h("td", {}, h("div", { text: n.student_name }), h("div", { class: "muted small", text: n.student_email })),
       h("td", {}, deliveryBadge(n)),
       h("td", { class: "small", text: n.is_read ? "Read" : "—" })));
@@ -731,7 +800,8 @@ function eventCard(e) {
         h("span", { text: e.community_name }),
         h("span", { text: "Deadline " + fmt(e.registration_deadline) }),
         h("span", { text: "Starts " + fmt(e.starts_at) }),
-        e.location ? h("span", { text: e.location }) : null)),
+        e.location ? h("span", { text: e.location }) : null),
+      e.previous_starts_at ? h("div", { class: "muted small", style: "margin-top:4px", text: "Moved from " + fmt(e.previous_starts_at) }) : null),
     h("div", { class: "side" },
       badge(stateLabel, stateClass),
       h("div", { class: "small", text: e.confirmed_count + " / " + e.participant_limit + " places" +
@@ -753,11 +823,14 @@ function eventCard(e) {
         }) }) : null,
       h("button", { class: "btn secondary small", type: "button", text: "Delivery log",
         onclick: () => { ui.logEvent = String(e.event_id); go("pushes"); } }),
-      live ? confirmButton("Cancel event", "Click again to cancel", async () => {
+      live && e.state !== "finished" ? confirmButton("Cancel event",
+        "Click again: " + plural(e.confirmed_count + e.waiting_count, "student gets", "students get") + " a push", async () => {
         const res = await call("POST", "/admin/events/" + e.event_id + "/cancel");
         if (!res.ok) { toast(reason(res), false); return; }
-        toast("“" + e.title + "” is cancelled. Students no longer see it.");
-        refresh();
+        toast("“" + e.title + "” is cancelled. " + (res.data.notified
+          ? plural(res.data.notified, "registered student gets", "registered students get") + " a push."
+          : "Nobody was registered."));
+        setTimeout(refresh, 1200);
       }) : null));
 }
 
@@ -890,6 +963,39 @@ function openCommunityForm(c) {
   $("c-name").focus();
 }
 
+function openRejectForm(c) {
+  const form = h("form", {},
+    h("label", { for: "r-reason", text: "Reason (the student sees it in the app)" }),
+    h("textarea", { id: "r-reason", maxlength: "300", placeholder: "For example: such a club already exists — join the Games Club." }),
+    h("div", { class: "actions" },
+      h("button", { class: "btn danger", type: "submit", text: "Reject request" }),
+      h("button", { class: "btn secondary", type: "button", text: "Cancel", onclick: () => $("drawer").close() })));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await busy(e.submitter || form.querySelector("button[type=submit]"), async () => {
+      const res = await call("POST", "/admin/communities/" + c.community_id + "/reject",
+        { reason: $("r-reason").value.trim() || null });
+      if (!res.ok) { toast(reason(res), false); return; }
+      toast("“" + c.name + "” is rejected. The name is free again.");
+      $("drawer").close(); refresh();
+    });
+  });
+  openDrawer("Reject " + c.name, "Asked by " + c.owner.full_name, form);
+  $("r-reason").focus();
+}
+
+async function updateRequestCount(known) {
+  if (!me || !me.is_moderator) return;
+  let n = known;
+  if (n === undefined) {
+    const res = await call("GET", PATHS.communities + "?status=pending");
+    if (!res.ok) return;
+    n = res.data.length;
+  }
+  $("req-count").textContent = String(n);
+  $("req-count").classList.toggle("hidden", !n);
+}
+
 function openEventForm(e) {
   const form = h("form", {},
     h("label", { for: "e-title", text: "Title" }),
@@ -906,7 +1012,7 @@ function openEventForm(e) {
     h("p", { class: "hint", text: "Times in " + zoneLabel + "." }),
     h("label", { for: "e-limit", text: "Participant limit" }),
     h("input", { id: "e-limit", type: "number", min: String(Math.max(1, e.confirmed_count)), max: "10000", required: true, value: String(e.participant_limit) }),
-    h("p", { class: "hint", text: e.confirmed_count + " confirmed, " + e.waiting_count + " waiting. A larger limit moves waiting students up at once and sends each of them a push; it cannot go below the confirmed count." }),
+    h("p", { class: "hint", text: e.confirmed_count + " confirmed, " + e.waiting_count + " waiting. A larger limit moves waiting students up at once and sends each of them a push; it cannot go below the confirmed count. A new start time is sent as a push to every registered student." }),
     h("div", { class: "actions" },
       h("button", { class: "btn", type: "submit", text: "Save changes" }),
       h("button", { class: "btn secondary", type: "button", text: "Cancel", onclick: () => $("drawer").close() })));
@@ -930,7 +1036,8 @@ function openEventForm(e) {
       if (!Object.keys(changes).length) { $("drawer").close(); return; }
       const res = await call("PATCH", "/admin/events/" + e.event_id, changes);
       if (!res.ok) { toast(reason(res), false); return; }
-      toast("Saved." + (res.data.promoted ? " " + plural(res.data.promoted, "student", "students") + " moved up from the waiting list and notified." : ""));
+      toast("Saved." + (res.data.promoted ? " " + plural(res.data.promoted, "student", "students") + " moved up from the waiting list and notified." : "")
+        + (res.data.rescheduled_notified ? " New time sent to " + plural(res.data.rescheduled_notified, "registered student", "registered students") + "." : ""));
       $("drawer").close();
       refresh();
     });

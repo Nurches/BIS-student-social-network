@@ -8,6 +8,7 @@ import 'package:qatys/core/config/app_config.dart';
 import 'package:qatys/core/config/demo_data_banner.dart';
 import 'package:qatys/core/storage/local_store.dart';
 import 'package:qatys/features/auth/data/auth_providers.dart';
+import 'package:qatys/features/feed/presentation/announcements.dart';
 
 import '../../helpers/fakes.dart';
 import '../../helpers/test_app.dart';
@@ -72,7 +73,8 @@ void main() {
     ).pump(tester);
     expect(find.text(DemoDataBanner.text), findsOneWidget);
 
-    await tester.tap(find.byType(Card).first);
+    // An announcement card on top of the feed opens the event page.
+    await tester.tap(find.byType(AnnouncementCard).first);
     await tester.pumpAndSettle();
     expect(find.byType(BackButton), findsOneWidget);
     expect(find.text(DemoDataBanner.text), findsOneWidget);

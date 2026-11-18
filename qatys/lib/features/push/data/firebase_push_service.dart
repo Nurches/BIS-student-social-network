@@ -66,10 +66,14 @@ class FirebasePushService implements PushService {
   Stream<PushNotice> get foregroundNotices => FirebaseMessaging.onMessage
       .map((m) {
         final id = eventIdFromData(m.data);
-        if (id == null) return null;
+        final communityId = communityIdFromData(m.data);
+        if (id == null && communityId == null) return null;
         return PushNotice(
           title: m.notification?.title ?? 'New event',
+          body: m.notification?.body ?? '',
+          type: '${m.data['type'] ?? 'event_published'}',
           eventId: id,
+          communityId: communityId,
         );
       })
       .where((n) => n != null)

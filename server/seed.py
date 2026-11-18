@@ -48,12 +48,13 @@ STUDENTS = [
 ADMIN_EMAIL = "union@kbtu.kz"
 
 COMMUNITIES = [
-    # name, description, owner email, confirmed by the Student Union
-    ("IT Club", "Programming contests, hackathons and workshops", ADMIN_EMAIL, True),
-    ("Career Center", "Internships, job fairs, CV clinics", ADMIN_EMAIL, True),
-    ("Debate Society", "Weekly debates and tournaments", "akbota@kbtu.kz", False),
-    ("Sports Club", "Futsal, volleyball and the KBTU running club", ADMIN_EMAIL, True),
-    ("Volunteer Hub", "Charity drives, campus clean-ups and mentoring", ADMIN_EMAIL, True),
+    # name, description, owner email, status (schema v4). Debate Society is a
+    # student's request waiting for the Student Union (Week 12 demo: approve it).
+    ("IT Club", "Programming contests, hackathons and workshops", ADMIN_EMAIL, "confirmed"),
+    ("Career Center", "Internships, job fairs, CV clinics", ADMIN_EMAIL, "confirmed"),
+    ("Debate Society", "Weekly debates and tournaments", "akbota@kbtu.kz", "pending"),
+    ("Sports Club", "Futsal, volleyball and the KBTU running club", ADMIN_EMAIL, "confirmed"),
+    ("Volunteer Hub", "Charity drives, campus clean-ups and mentoring", ADMIN_EMAIL, "confirmed"),
 ]
 # Extra followers of the communities the demo accounts do not follow.
 EXTRA_SUBSCRIPTIONS = [
@@ -183,19 +184,21 @@ def seed(conn: psycopg.Connection, password: str, rounds: int) -> None:
     with conn.transaction():
         ids: dict[str, int] = {}
         for email, name, faculty, year in STUDENTS:
+            # Schema v3: the faculty is a code of the faculty reference table.
             row = conn.execute(
-                "INSERT INTO student (email, full_name, password_hash, faculty, enrolled_year, "
-                "is_moderator) VALUES (%s, %s, %s, %s, %s, %s) RETURNING student_id",
+                "INSERT INTO student (email, full_name, password_hash, faculty_id, enrolled_year, "
+                "is_moderator) VALUES (%s, %s, %s, "
+                "(SELECT faculty_id FROM faculty WHERE code = %s), %s, %s) RETURNING student_id",
                 (email, name, password_hash, faculty, year, email == ADMIN_EMAIL),
             ).fetchone()
             ids[email] = row["student_id"]
 
         communities: dict[str, int] = {}
-        for name, description, owner, confirmed in COMMUNITIES:
+        for name, description, owner, status in COMMUNITIES:
             row = conn.execute(
-                "INSERT INTO community (name, description, owner_id, is_confirmed) "
+                "INSERT INTO community (name, description, owner_id, status) "
                 "VALUES (%s, %s, %s, %s) RETURNING community_id",
-                (name, description, ids[owner], confirmed),
+                (name, description, ids[owner], status),
             ).fetchone()
             communities[name] = row["community_id"]
 

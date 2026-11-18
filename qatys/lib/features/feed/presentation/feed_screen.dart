@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/format/date_format.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../core/widgets/ui.dart';
+import '../../auth/presentation/session_controller.dart';
 import '../../event/domain/event.dart';
 import '../../event/presentation/event_card.dart';
 import '../../event/presentation/my_events_controller.dart';
@@ -11,6 +12,7 @@ import '../../home/presentation/home_tab_controller.dart';
 import '../../inbox/presentation/inbox_controller.dart';
 import '../../inbox/presentation/inbox_screen.dart';
 import '../../sync/presentation/pending_actions_controller.dart';
+import 'announcements.dart';
 import 'feed_controller.dart';
 
 export '../../event/presentation/event_card.dart' show EventCard;
@@ -32,6 +34,7 @@ class _FeedScreenState extends ConsumerState<FeedScreen> {
   Future<void> _refreshAll() async {
     // The badge and My events follow the feed.
     ref.invalidate(myEventsProvider);
+    ref.invalidate(announcementsProvider);
     await Future.wait([
       ref.read(feedControllerProvider.notifier).refresh(),
       ref.read(inboxProvider.notifier).refresh().catchError((Object _) {}),
@@ -150,6 +153,12 @@ class _FeedList extends ConsumerWidget {
         ),
     ];
 
+    // Week 12: a greeting, then announcement cards from all over campus.
+    header.addAll([
+      _Greeting(now: now, name: ref.watch(_firstNameProvider)),
+      const AnnouncementsCarousel(),
+    ]);
+
     if (state.events.isEmpty) {
       // A ListView, so pull to refresh still works on the empty state.
       return ListView(
@@ -177,7 +186,7 @@ class _FeedList extends ConsumerWidget {
         state.events.where((e) => e.myState != RegistrationState.none).toList(),
     };
     header.addAll([
-      _Greeting(now: now, count: state.events.length),
+      _FeedHeading(count: state.events.length),
       _Filters(selected: filter, onSelected: onFilter),
       if (events.isEmpty)
         EmptyState(
@@ -293,11 +302,50 @@ class _FirstLoadError extends StatelessWidget {
   );
 }
 
+/// "From communities you follow" with the number of open events.
+class _FeedHeading extends StatelessWidget {
+  const _FeedHeading({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Your feed', style: theme.textTheme.titleLarge),
+          Text(
+            count == 1
+                ? '1 event open for registration in communities you follow'
+                : '$count events open for registration in communities '
+                      'you follow',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+final _firstNameProvider = Provider<String?>((ref) {
+  final name = ref.watch(
+    sessionControllerProvider.select((s) => s.value?.student.fullName),
+  );
+  if (name == null || name.trim().isEmpty) return null;
+  // Seeded names are "Surname Name": the greeting uses the last word.
+  return name.trim().split(RegExp(r'\s+')).last;
+});
+
 class _Greeting extends StatelessWidget {
-  const _Greeting({required this.now, required this.count});
+  const _Greeting({required this.now, required this.name});
 
   final DateTime now;
-  final int count;
+  final String? name;
 
   @override
   Widget build(BuildContext context) {
@@ -315,12 +363,13 @@ class _Greeting extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(hello, style: theme.textTheme.headlineSmall),
+          Text(
+            name == null ? hello : '$hello, $name',
+            style: theme.textTheme.headlineSmall,
+          ),
           const SizedBox(height: 2),
           Text(
-            count == 1
-                ? '1 event open for registration'
-                : '$count events open for registration',
+            '${formatDayDate(now)} · what is on at KBTU',
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

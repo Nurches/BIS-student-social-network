@@ -40,6 +40,9 @@ class SwitchableEventRepository implements EventRepository {
       _call(() => inner.fetchFeed(limit: limit, cursor: cursor));
 
   @override
+  Future<List<Event>> fetchAnnouncements() => _call(inner.fetchAnnouncements);
+
+  @override
   Future<Event> fetchEvent(int id) => _call(() => inner.fetchEvent(id));
 
   @override
@@ -176,3 +179,24 @@ void useSmallPhone(WidgetTester tester) {
     ..devicePixelRatio = 2;
   addTearDown(tester.view.reset);
 }
+
+/// Week 12: the announcement carousel sits above the feed, so a feed card
+/// may start below the test screen. Scrolls the vertical list to [finder].
+Future<void> showInFeed(WidgetTester tester, Finder finder) async {
+  await tester.scrollUntilVisible(
+    finder,
+    150,
+    scrollable: find
+        .byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+}
+
+/// [text] inside a feed card (the same title can also be on an announcement).
+Finder inFeedCard(String text) => find.descendant(
+  of: find.byWidgetPredicate((w) => w.runtimeType.toString() == 'EventCard'),
+  matching: find.text(text),
+);

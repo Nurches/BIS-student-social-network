@@ -9,7 +9,11 @@ import 'core/theme/app_theme.dart';
 import 'features/auth/domain/session.dart';
 import 'features/auth/presentation/login_screen.dart';
 import 'features/auth/presentation/session_controller.dart';
+import 'features/community/presentation/communities_controller.dart';
+import 'features/community/presentation/community_request_screen.dart';
 import 'features/event/presentation/event_detail_screen.dart';
+import 'features/event/presentation/my_events_controller.dart';
+import 'features/feed/presentation/announcements.dart';
 import 'features/home/presentation/home_shell.dart';
 import 'features/inbox/presentation/inbox_controller.dart';
 import 'features/push/domain/push_service.dart';
@@ -95,14 +99,29 @@ class _QatysAppState extends ConsumerState<QatysApp> {
   void _showNotice(PushNotice notice) {
     // The bell on the feed counts the new notification too.
     ref.invalidate(inboxProvider);
+    // Week 12: the change behind the push shows at once on the open screens.
+    switch (notice.type) {
+      case 'community_approved':
+        ref
+          ..invalidate(myCommunityRequestsProvider)
+          ..invalidate(communitiesProvider);
+      case 'event_cancelled' || 'event_rescheduled':
+        ref
+          ..invalidate(myEventsProvider)
+          ..invalidate(announcementsProvider);
+    }
     _messenger.currentState?.showSnackBar(
       SnackBar(
-        content: Text('New event: ${notice.title}'),
+        content: Text(notice.text),
         duration: const Duration(seconds: 8),
-        action: SnackBarAction(
-          label: 'Open',
-          onPressed: () => _openEvent(notice.eventId),
-        ),
+        action: switch (notice.eventId) {
+          final int id => SnackBarAction(
+            label: 'Open',
+            onPressed: () => _openEvent(id),
+          ),
+          // community_approved: the inbox (bell) has it; nothing to open.
+          null => null,
+        },
       ),
     );
   }

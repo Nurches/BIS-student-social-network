@@ -11,14 +11,17 @@ from ..errors import error_responses
 from ..schemas import (
     AdminCommunityOut,
     AdminEventListResponse,
-    AdminEventOut,
     AdminMeOut,
     AdminNotificationsResponse,
     AdminOverviewOut,
     AdminRegistrationsResponse,
     AdminStudentsResponse,
     CommunityCreateRequest,
+    CommunityRejectRequest,
+    CommunityReviewOut,
+    CommunityStatus,
     CommunityUpdateRequest,
+    EventCancelOut,
     EventUpdateOut,
     EventUpdateRequest,
     ModeratorRoleRequest,
@@ -76,13 +79,16 @@ def overview(admin: Admin = Depends(current_admin), pool: Pool = Depends(get_poo
     "/communities",
     response_model=list[AdminCommunityOut],
     summary="Communities with owner and counts (moderator: all; owner: own)",
-    responses=error_responses(*_ADMIN),
+    responses=error_responses(*_ADMIN, "validation_failed"),
 )
 def communities(
-    admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)
+    status: CommunityStatus | None = Query(default=None, description="Only this status"),
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
 ) -> list[dict]:
+    """`?status=pending` lists the requests waiting for a moderator (v4)."""
     with pool.connection() as conn:
-        return admin_panel.list_communities(conn, admin)
+        return admin_panel.list_communities(conn, admin, status)
 
 
 @router.post(
@@ -127,13 +133,67 @@ def create_community(
 def update_community(
     community_id: int,
     body: CommunityUpdateRequest,
+    request: Request,
+    background: BackgroundTasks,
     admin: Admin = Depends(current_admin),
     pool: Pool = Depends(get_pool),
 ) -> dict:
+    """Confirming a community that was not confirmed pushes `community_approved`
+    to its owner, as `POST /admin/communities/{id}/approve` does."""
     with pool.connection() as conn:
-        return admin_panel.update_community(
+        community, notification_ids = admin_panel.update_community(
             conn, admin, community_id, body.model_dump(exclude_unset=True)
         )
+    schedule_push(request, background, notification_ids)
+    return community
+
+
+_REVIEW = (
+    *_ADMIN,
+    "moderator_only",
+    "cannot_review_own_request",
+    "community_not_found",
+    "community_not_pending",
+    "validation_failed",
+)
+
+
+@router.post(
+    "/communities/{community_id}/approve",
+    response_model=CommunityReviewOut,
+    summary="Approve a community request (moderator only); the owner gets a push",
+    responses=error_responses(*_REVIEW),
+)
+def approve_community(
+    community_id: int,
+    request: Request,
+    background: BackgroundTasks,
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
+) -> dict:
+    """Week 12: pending -> confirmed. The owner may publish from now on (BR-01)."""
+    with pool.connection() as conn:
+        community, notification_ids = admin_panel.approve_community(conn, admin, community_id)
+    schedule_push(request, background, notification_ids)
+    return {"community": community, "notified": len(notification_ids)}
+
+
+@router.post(
+    "/communities/{community_id}/reject",
+    response_model=CommunityReviewOut,
+    summary="Reject a community request with an optional reason (moderator only)",
+    responses=error_responses(*_REVIEW, "payload_too_large"),
+)
+def reject_community(
+    community_id: int,
+    body: CommunityRejectRequest,
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
+) -> dict:
+    """Week 12: pending -> rejected. The student sees the reason in the app."""
+    with pool.connection() as conn:
+        community = admin_panel.reject_community(conn, admin, community_id, body.reason)
+    return {"community": community, "notified": 0}
 
 
 # ---------- events ----------
@@ -164,6 +224,7 @@ def events(
         "limit_below_confirmed",
         "deadline_in_the_past",
         "deadline_after_event_start",
+        "start_in_the_past",
         "timestamp_without_offset",
         "payload_too_large",
     ),
@@ -177,26 +238,39 @@ def update_event(
     pool: Pool = Depends(get_pool),
 ) -> dict:
     """FR-02 for a moved deadline. Each promoted student gets the
-    `waiting_list_promoted` push, as after a cancellation."""
+    `waiting_list_promoted` push, as after a cancellation. v4: a new
+    `starts_at` pushes `event_rescheduled` to every confirmed or waiting student."""
     with pool.connection() as conn:
-        event, notification_ids = admin_panel.update_event(
+        event, notification_ids, rescheduled = admin_panel.update_event(
             conn, admin, event_id, body.model_dump(exclude_unset=True)
         )
     schedule_push(request, background, notification_ids)
-    return {"event": event, "promoted": len(notification_ids)}
+    return {
+        "event": event,
+        "promoted": len(notification_ids) - rescheduled,
+        "rescheduled_notified": rescheduled,
+    }
 
 
 @router.post(
     "/events/{event_id}/cancel",
-    response_model=AdminEventOut,
-    summary="Cancel an event: students no longer see it (no push)",
-    responses=error_responses(*_EVENT, "event_cancelled"),
+    response_model=EventCancelOut,
+    summary="Cancel an event: every registered student gets a push",
+    responses=error_responses(*_EVENT, "event_cancelled", "event_started"),
 )
 def cancel_event(
-    event_id: int, admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)
+    event_id: int,
+    request: Request,
+    background: BackgroundTasks,
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
 ) -> dict:
+    """v4: confirmed and waiting students get `event_cancelled`; the event
+    leaves the feed but its page shows "Cancelled"."""
     with pool.connection() as conn:
-        return admin_panel.cancel_event(conn, admin, event_id)
+        event, notification_ids = admin_panel.cancel_event(conn, admin, event_id)
+    schedule_push(request, background, notification_ids)
+    return {"event": event, "notified": len(notification_ids)}
 
 
 @router.post(

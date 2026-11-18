@@ -24,6 +24,16 @@ class FollowButton extends ConsumerWidget {
     final following = community.isSubscribed;
     final size = expanded ? const Size.fromHeight(52) : const Size(112, 48);
 
+    // Week 12: the student's own request cannot be followed until approved.
+    if (community.isPending) {
+      return OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(minimumSize: size),
+        onPressed: null,
+        icon: const Icon(Icons.hourglass_top, size: 18),
+        label: const Text('In review'),
+      );
+    }
+
     Future<void> toggle() async {
       final messenger = ScaffoldMessenger.of(context);
       try {

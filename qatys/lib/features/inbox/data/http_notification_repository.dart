@@ -47,11 +47,21 @@ Inbox inboxFromJson(Map<String, Object?> json) => Inbox(
         kind: switch (jsonField<String>(item, 'kind')) {
           'event_published' => NotificationKind.eventPublished,
           'waiting_list_promoted' => NotificationKind.waitingListPromoted,
+          'event_cancelled' => NotificationKind.eventCancelled,
+          'event_rescheduled' => NotificationKind.eventRescheduled,
+          'community_approved' => NotificationKind.communityApproved,
           final other => throw FormatException('Unknown kind "$other"'),
         },
-        eventId: jsonField<int>(item, 'event_id'),
-        eventTitle: jsonField<String>(item, 'event_title'),
+        eventId: jsonField<int?>(item, 'event_id'),
+        eventTitle: jsonField<String?>(item, 'event_title'),
+        communityId: jsonField<int?>(item, 'community_id'),
         communityName: jsonField<String>(item, 'community_name'),
+        startsAt: item['starts_at'] == null
+            ? null
+            : jsonDateTime(item, 'starts_at'),
+        previousStartsAt: item['previous_starts_at'] == null
+            ? null
+            : jsonDateTime(item, 'previous_starts_at'),
         createdAt: jsonDateTime(item, 'created_at'),
         isRead: jsonField<bool>(item, 'is_read'),
       ),

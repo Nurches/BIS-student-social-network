@@ -13,4 +13,13 @@ abstract interface class CommunityRepository {
 
   /// Open events of one community, also when the student does not follow it.
   Future<List<Event>> fetchCommunityEvents(int communityId);
+
+  /// Week 12: ask the Student Union for a new community (`POST /communities`).
+  Future<CommunityRequestResult> requestCommunity({
+    required String name,
+    String? description,
+  });
+
+  /// Communities the student asked for, with the moderator's answer.
+  Future<CommunityRequests> fetchMyRequests();
 }

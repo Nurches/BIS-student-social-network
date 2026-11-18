@@ -125,10 +125,28 @@ def create_sender(settings: Settings) -> PushSender:
     return LoggingPushSender()
 
 
+def _when(value: object, zone: ZoneInfo) -> str:
+    return value.astimezone(zone).strftime("%d %b, %H:%M")  # type: ignore[attr-defined]
+
+
 def _texts(row: dict, zone: ZoneInfo) -> tuple[str, str]:
-    deadline = row["registration_deadline"].astimezone(zone).strftime("%d %b, %H:%M")
-    if row["kind"] == "waiting_list_promoted":
+    kind = row["kind"]
+    if kind == "community_approved":
+        return (
+            "Community approved",
+            f"{row['community_name']} is confirmed by the Student Union. "
+            "You can publish events now.",
+        )
+    if kind == "event_cancelled":
+        return "Event cancelled", f"{row['title']} ({_when(row['starts_at'], zone)}) is cancelled."
+    if kind == "event_rescheduled":
+        was = (
+            f" (was {_when(row['previous_starts_at'], zone)})" if row["previous_starts_at"] else ""
+        )
+        return "Event moved", f"{row['title']}: now {_when(row['starts_at'], zone)}{was}."
+    if kind == "waiting_list_promoted":
         return "You got a place", f"{row['title']}: you were moved from the waiting list."
+    deadline = _when(row["registration_deadline"], zone)
     return row["title"], f"{row['community_name']} · register by {deadline}"
 
 
@@ -145,10 +163,11 @@ def deliver(
         rows = conn.execute(
             """
             SELECT n.notification_id, n.student_id, n.event_id, n.kind,
-                   e.title, e.registration_deadline, c.name AS community_name
+                   c.community_id, e.title, e.registration_deadline, e.starts_at,
+                   e.previous_starts_at, c.name AS community_name
             FROM notification n
-            JOIN event e     ON e.event_id = n.event_id
-            JOIN community c ON c.community_id = e.community_id
+            LEFT JOIN event e ON e.event_id = n.event_id
+            JOIN community c  ON c.community_id = COALESCE(e.community_id, n.community_id)
             WHERE n.notification_id = ANY(%s) AND n.sent_at IS NULL
             """,
             (notification_ids,),
@@ -160,7 +179,12 @@ def deliver(
                 (row["student_id"],),
             ).fetchall()
             title, body = _texts(row, zone)
-            data = {"type": row["kind"], "event_id": str(row["event_id"])}
+            # The app opens the event, or the community for `community_approved`.
+            data = {"type": row["kind"]}
+            if row["event_id"] is not None:
+                data["event_id"] = str(row["event_id"])
+            else:
+                data["community_id"] = str(row["community_id"])
 
             delivered = False
             for t in tokens:

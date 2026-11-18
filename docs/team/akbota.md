@@ -102,3 +102,33 @@ can explain each finding.
    rotate `JWT_SECRET` on Render; all tokens become invalid and everyone logs in again.
 3. *Why is Swagger public?* — It is our admin tool for the demo and shows only the list of
    endpoints, not data; every call still needs a token. We turn it off after the defence.
+
+### Soft delete (Task 09 promise, W11-9)
+
+* **Problem promised in Task 09:** `ON DELETE CASCADE` from `registration` and `notification`
+  meant that deleting a student or an event silently wiped who registered and who was
+  notified — the history needed for statistics and disputes.
+* **Change** (commit `Akbota: soft delete ...`, `docs/migrations/003_soft_delete_and_faculty.sql`):
+  * `deleted_at` on `student`, `community` and `event`: "delete" means setting the time, the
+    row stays;
+  * the foreign keys from `registration` and `notification` are now `ON DELETE RESTRICT`:
+    PostgreSQL refuses a real DELETE of a student or event that still has history;
+  * the server ignores soft-deleted rows: not in the feed, 404 for the event page,
+    registration and publishing, a deleted student cannot log in (401) or use an old token,
+    and gets no notifications. No delete endpoint was added (`TODO(confirm)`).
+* **Proof:** `server/tests/test_soft_delete_and_faculty.py` — deleting an event with
+  registrations fails on `registration_event_id_fkey`; a soft-deleted event disappears from
+  the feed and its page answers 404 while its registrations stay; migration 003 on a v2
+  database gives exactly the fresh v3 structure.
+* **Live database:** gets v3 only through the reseed (`docs/demo-runbook.md`).
+
+**Explain it yourself (soft delete).** Before, deleting an event also deleted every
+registration and notification of it, so we lost the history of who took part. Now nothing is
+really deleted: we mark the row with the time it was deleted, and the API stops showing it.
+The database itself refuses a real delete while history points to the row (RESTRICT), so the
+history cannot disappear by accident. The tests try the forbidden delete and check the
+refusal, and check that a deleted event disappears from the feed.
+
+*Likely question: Why not just delete?* — Registrations and notifications are evidence (who
+was promised a place, who was notified). A real delete would break the statistics and any
+dispute; soft delete keeps them and still hides the row from users.

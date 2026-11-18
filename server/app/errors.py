@@ -48,6 +48,9 @@ ERRORS: dict[str, ErrorDoc] = {
     "not_allowed": ErrorDoc(403, "Not in the DATA_CHECK_EMAILS allow list; nothing runs"),
     "not_an_admin": ErrorDoc(403, "Admin panel: not a moderator and owns no community"),
     "moderator_only": ErrorDoc(403, "Admin panel: only a Student Union moderator may do this"),
+    "cannot_review_own_request": ErrorDoc(
+        403, "v4: a moderator cannot approve or reject a community they requested"
+    ),
     "not_your_community": ErrorDoc(
         403, "Admin panel: not the owner of this community and not a moderator"
     ),
@@ -58,13 +61,19 @@ ERRORS: dict[str, ErrorDoc] = {
     "email_already_registered": ErrorDoc(409, "An account with this email exists"),
     "already_registered": ErrorDoc(409, "Already confirmed or on the waiting list"),
     "community_name_taken": ErrorDoc(409, "Another community already has this name"),
-    "event_cancelled": ErrorDoc(409, "The event is cancelled and cannot be changed"),
+    "event_cancelled": ErrorDoc(409, "The event is cancelled: no change, no registration"),
+    "too_many_pending_requests": ErrorDoc(
+        409, "v4: the student already has 3 community requests waiting for a moderator"
+    ),
+    "community_not_pending": ErrorDoc(
+        409, "v4: only a pending request can be approved or rejected"
+    ),
     "limit_below_confirmed": ErrorDoc(
         409, "The new participant limit is below the number of confirmed students"
     ),
     "cannot_change_own_role": ErrorDoc(409, "A moderator cannot remove their own role"),
     "deadline_passed": ErrorDoc(410, "FR-02: the registration deadline has passed"),
-    "event_started": ErrorDoc(410, "Cancelling after the event started"),
+    "event_started": ErrorDoc(410, "Cancelling (a registration or the event) after it started"),
     "payload_too_large": ErrorDoc(413, "Body over 64 KB, refused before parsing"),
     "validation_failed": ErrorDoc(
         422,
@@ -78,9 +87,11 @@ ERRORS: dict[str, ErrorDoc] = {
     "not_a_university_email": ErrorDoc(422, "BR-01: only @kbtu.kz addresses"),
     "password_too_short": ErrorDoc(422, "Fewer than 8 characters"),
     "password_too_long": ErrorDoc(422, "More than 72 bytes (bcrypt reads only 72)"),
+    "unknown_faculty": ErrorDoc(422, "`faculty` is not a code of the faculty table"),
     "invalid_cursor": ErrorDoc(422, "`cursor` is not a `next_cursor` of this server"),
     "deadline_in_the_past": ErrorDoc(422, "FR-02: the registration deadline is in the past"),
     "deadline_after_event_start": ErrorDoc(422, "The deadline is after `starts_at`"),
+    "start_in_the_past": ErrorDoc(422, "v4: a moved event must still start in the future"),
     "account_locked": ErrorDoc(
         423,
         "NFR-02: 5 wrong passwords in 10 min lock the account for 15 min, "

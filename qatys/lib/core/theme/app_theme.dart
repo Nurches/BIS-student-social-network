@@ -46,9 +46,11 @@ abstract final class AppTheme {
     final buttonShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(14),
     );
-    const buttonText = TextStyle(fontSize: 16, fontWeight: FontWeight.w700);
 
     final base = ThemeData(colorScheme: colorScheme, useMaterial3: true);
+    // From the theme's label style, so buttons keep the platform font family.
+    final buttonText = (base.textTheme.labelLarge ?? const TextStyle())
+        .copyWith(fontSize: 16, fontWeight: FontWeight.w700);
     final text = base.textTheme.copyWith(
       headlineLarge: base.textTheme.headlineLarge?.copyWith(
         fontWeight: FontWeight.w800,
@@ -144,9 +146,39 @@ abstract final class AppTheme {
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
-      chipTheme: base.chipTheme.copyWith(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+      // Defect of 11 Nov: the label had no colour and rendered white on white.
+      // Unselected: dark text on the card colour; selected: white on brand.
+      chipTheme: ChipThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        backgroundColor: colorScheme.surfaceContainerLowest,
+        selectedColor: colorScheme.primary,
+        disabledColor: colorScheme.surfaceContainerHighest,
+        checkmarkColor: colorScheme.onPrimary,
+        labelStyle: WidgetStateTextStyle.resolveWith(
+          (states) => (text.labelLarge ?? const TextStyle()).copyWith(
+            fontWeight: FontWeight.w700,
+            color: states.contains(WidgetState.selected)
+                ? colorScheme.onPrimary
+                : colorScheme.onSurface,
+          ),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        showCheckmark: true,
+      ),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: isLight ? brand : colorScheme.primaryContainer,
+        foregroundColor: isLight
+            ? Colors.white
+            : colorScheme.onPrimaryContainer,
+        extendedTextStyle: buttonText,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
       dividerTheme: DividerThemeData(color: colorScheme.outlineVariant),
     );
@@ -183,4 +215,45 @@ String initials(String name) {
     return (w.length >= 2 ? w.substring(0, 2) : w).toUpperCase();
   }
   return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+/// A two-colour gradient in the community's colour, for the announcement
+/// cards and the header of the event page.
+LinearGradient communityGradient(int communityId) {
+  final base = communityColor(communityId);
+  final hsl = HSLColor.fromColor(base);
+  final deep = hsl
+      .withLightness((hsl.lightness - 0.14).clamp(0.08, 1.0))
+      .withHue((hsl.hue + 18) % 360)
+      .toColor();
+  return LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [base, deep],
+  );
+}
+
+/// An icon that hints at what an event is about, from words in its title or
+/// its community's name. Decoration only: never the only source of meaning.
+IconData eventIcon(String title, String communityName) {
+  final text = '$title $communityName'.toLowerCase();
+  bool has(List<String> words) => words.any(text.contains);
+  if (has(['hackathon', 'code', 'coding', 'programming', 'it club'])) {
+    return Icons.code_rounded;
+  }
+  if (has(['flutter', 'git', 'workshop', 'lab'])) return Icons.build_rounded;
+  if (has(['career', 'job', 'cv', 'intern', 'fair'])) {
+    return Icons.work_outline_rounded;
+  }
+  if (has(['futsal', 'football', 'sport', 'volleyball', 'run', 'cup'])) {
+    return Icons.sports_soccer_rounded;
+  }
+  if (has(['volunteer', 'clean', 'charity', 'mentor'])) {
+    return Icons.volunteer_activism_rounded;
+  }
+  if (has(['debate', 'talk', 'lecture', 'forum'])) return Icons.forum_rounded;
+  if (has(['music', 'concert', 'party', 'festival'])) {
+    return Icons.celebration_rounded;
+  }
+  return Icons.campaign_rounded;
 }

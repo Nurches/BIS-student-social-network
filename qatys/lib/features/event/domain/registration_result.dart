@@ -29,6 +29,11 @@ final class RegistrationClosed extends RegistrationResult {
   const RegistrationClosed();
 }
 
+/// 409 `event_cancelled`: the organiser cancelled the event.
+final class RegistrationEventCancelled extends RegistrationResult {
+  const RegistrationEventCancelled();
+}
+
 /// Expected outcomes of `DELETE /events/{id}/registrations`.
 sealed class CancelResult {
   const CancelResult();
@@ -48,4 +53,9 @@ final class CancelNotRegistered extends CancelResult {
 /// 410 `event_started`: too late to cancel.
 final class CancelEventStarted extends CancelResult {
   const CancelEventStarted();
+}
+
+/// 409 `event_cancelled`: the whole event is cancelled; nothing to give up.
+final class CancelEventCancelled extends CancelResult {
+  const CancelEventCancelled();
 }

@@ -18,8 +18,19 @@ Event eventFromJson(Map<String, Object?> json) {
     freePlaces: _field<int>(json, 'free_places'),
     myState: _registrationState(_field<String?>(json, 'my_status')),
     waitingPosition: _field<int?>(json, 'waiting_position'),
+    // v4 fields; an older server (or an older cached feed) has none of them.
+    status: switch (json['status']) {
+      null || 'published' => EventStatus.published,
+      'cancelled' => EventStatus.cancelled,
+      final other => throw FormatException('Unknown event status "$other"'),
+    },
+    previousStartsAt: _optionalDateTime(json, 'previous_starts_at'),
+    cancelledAt: _optionalDateTime(json, 'cancelled_at'),
   );
 }
+
+DateTime? _optionalDateTime(Map<String, Object?> json, String key) =>
+    json[key] == null ? null : _dateTime(json, key);
 
 /// The inverse of [eventFromJson], for the offline feed cache.
 Map<String, Object?> eventToJson(Event event) => {
@@ -39,6 +50,9 @@ Map<String, Object?> eventToJson(Event event) => {
     RegistrationState.waitingList => 'waiting_list',
   },
   'waiting_position': event.waitingPosition,
+  'status': event.status.name,
+  'previous_starts_at': event.previousStartsAt?.toUtc().toIso8601String(),
+  'cancelled_at': event.cancelledAt?.toUtc().toIso8601String(),
 };
 
 /// Body of `GET /feed` (docs/api.md): `{ "items": [...], "next_cursor": ... }`,

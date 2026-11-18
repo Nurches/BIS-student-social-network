@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/format/date_format.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/ui.dart';
+import '../../community/presentation/community_screen.dart';
 import '../../event/presentation/event_detail_screen.dart';
 import '../../feed/presentation/feed_controller.dart';
 import '../domain/app_notification.dart';
@@ -51,8 +52,9 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
               icon: Icons.notifications_none,
               title: 'No notifications yet',
               message:
-                  'When a community you follow publishes an event, or you get '
-                  'a place from the waiting list, it appears here.',
+                  'New events of the communities you follow, a place from the '
+                  'waiting list, a cancelled or moved event and the answer to '
+                  'your community request appear here.',
             ),
           ],
         ),
@@ -85,34 +87,60 @@ class _NotificationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final promoted = notification.kind == NotificationKind.waitingListPromoted;
+    final n = notification;
+    final look = switch (n.kind) {
+      NotificationKind.eventPublished => (
+        icon: Icons.campaign_outlined,
+        background: theme.colorScheme.primaryContainer,
+        foreground: theme.colorScheme.onPrimaryContainer,
+        title: 'New event: ${n.eventTitle}',
+      ),
+      NotificationKind.waitingListPromoted => (
+        icon: Icons.celebration_outlined,
+        background: const Color(0xFFDDF3E4),
+        foreground: const Color(0xFF14532D),
+        title: 'You got a place: ${n.eventTitle}',
+      ),
+      NotificationKind.eventCancelled => (
+        icon: Icons.event_busy,
+        background: const Color(0xFFFDE2E1),
+        foreground: const Color(0xFF8A1C1C),
+        title: 'Cancelled: ${n.eventTitle}',
+      ),
+      NotificationKind.eventRescheduled => (
+        icon: Icons.update,
+        background: const Color(0xFFFFF1D6),
+        foreground: const Color(0xFF7A4B00),
+        title: n.startsAt == null
+            ? 'Moved: ${n.eventTitle}'
+            : 'Moved: ${n.eventTitle} · now ${formatDateTime(n.startsAt!)}',
+      ),
+      NotificationKind.communityApproved => (
+        icon: Icons.verified_outlined,
+        background: const Color(0xFFDDF3E4),
+        foreground: const Color(0xFF14532D),
+        title: 'Approved: ${n.communityName} is now a community',
+      ),
+    };
     return ListTile(
       minVerticalPadding: 12,
       leading: CircleAvatar(
         radius: 22,
-        backgroundColor: promoted
-            ? const Color(0xFFDDF3E4)
-            : theme.colorScheme.primaryContainer,
-        child: Icon(
-          promoted ? Icons.celebration_outlined : Icons.campaign_outlined,
-          color: promoted
-              ? const Color(0xFF14532D)
-              : theme.colorScheme.onPrimaryContainer,
-        ),
+        backgroundColor: look.background,
+        child: Icon(look.icon, color: look.foreground),
       ),
       title: Text(
-        promoted
-            ? 'You got a place: ${notification.eventTitle}'
-            : 'New event: ${notification.eventTitle}',
+        look.title,
         style: TextStyle(
-          fontWeight: notification.isRead ? FontWeight.w500 : FontWeight.w800,
+          fontWeight: n.isRead ? FontWeight.w500 : FontWeight.w800,
         ),
       ),
       subtitle: Text(
-        '${notification.communityName} · '
-        '${timeAgo(notification.createdAt, now)}',
+        n.kind == NotificationKind.communityApproved
+            ? 'Student Union · ${timeAgo(n.createdAt, now)}'
+            : '${n.communityName} · ${timeAgo(n.createdAt, now)}',
       ),
-      trailing: notification.isRead
+      trailing: n.isRead
           ? null
           : const Icon(
               Icons.circle,
@@ -122,7 +150,13 @@ class _NotificationTile extends StatelessWidget {
             ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => EventDetailScreen(eventId: notification.eventId),
+          builder: (_) => switch ((n.eventId, n.communityId)) {
+            (final int eventId, _) => EventDetailScreen(eventId: eventId),
+            (null, final int communityId) => CommunityScreen(
+              communityId: communityId,
+            ),
+            _ => const InboxScreen(),
+          },
         ),
       ),
     );

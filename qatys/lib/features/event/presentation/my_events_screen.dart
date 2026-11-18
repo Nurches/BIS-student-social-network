@@ -51,11 +51,19 @@ class MyEventsScreen extends ConsumerWidget {
                 for (final (title, list) in [
                   (
                     'Upcoming',
-                    value.where((e) => e.startsAt.isAfter(now)).toList(),
+                    value
+                        .where((e) => !e.isCancelled && e.startsAt.isAfter(now))
+                        .toList(),
                   ),
+                  // Week 12: kept, so the student sees why an event is gone.
+                  ('Cancelled', value.where((e) => e.isCancelled).toList()),
                   (
                     'Past',
-                    value.where((e) => !e.startsAt.isAfter(now)).toList(),
+                    value
+                        .where(
+                          (e) => !e.isCancelled && !e.startsAt.isAfter(now),
+                        )
+                        .toList(),
                   ),
                 ])
                   if (list.isNotEmpty) ...[

@@ -150,7 +150,14 @@ class FeedController extends AsyncNotifier<FeedState> {
     if (current == null) return;
     state = AsyncData(
       current.copyWith(
-        events: [for (final e in current.events) e.id == event.id ? event : e],
+        events: [
+          for (final e in current.events)
+            if (e.id != event.id)
+              e
+            // A cancelled event leaves the feed, as on the server.
+            else if (!event.isCancelled)
+              event,
+        ],
       ),
     );
   }

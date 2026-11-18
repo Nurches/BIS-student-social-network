@@ -1,5 +1,6 @@
 """Device tokens, /health, and the security checklist of roadmap M6."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -134,4 +135,6 @@ def test_swagger_and_admin_page_are_served(client: TestClient) -> None:
 
 def test_server_schema_has_no_test_data() -> None:
     schema = (Path(__file__).parents[1] / "app" / "schema.sql").read_text()
-    assert "INSERT INTO" not in schema
+    # Only reference data (schema v3: the faculty codes the API accepts).
+    inserts = re.findall(r"INSERT INTO (\w+)", schema)
+    assert inserts == ["faculty"]

@@ -22,7 +22,8 @@ SELECT p.event_id, p.community_id, p.community_name, p.title, p.description, p.l
            SELECT COUNT(*) FROM registration w
            WHERE w.event_id = p.event_id AND w.status = 'waiting_list'
              AND (w.updated_at, w.registration_id) <= (mine.updated_at, mine.registration_id)
-       ) END AS waiting_position
+       ) END AS waiting_position,
+       p.status, p.previous_starts_at, p.cancelled_at
 FROM page p
 LEFT JOIN registration mine
        ON mine.event_id = p.event_id
@@ -33,8 +34,11 @@ ORDER BY p.registration_deadline, p.event_id
 
 _PAGE_COLUMNS = """
 e.event_id, e.community_id, c.name AS community_name, e.title, e.description, e.location,
-e.starts_at, e.registration_deadline, e.participant_limit
+e.starts_at, e.registration_deadline, e.participant_limit,
+e.status, e.previous_starts_at, e.cancelled_at
 """
+
+ANNOUNCEMENTS_LIMIT = 10
 
 
 # ---------- feed ----------
@@ -75,6 +79,8 @@ def feed(conn: Conn, student_id: int, *, limit: int, cursor: str | None) -> dict
             JOIN subscription s ON s.community_id = e.community_id
                                AND s.student_id = %(student_id)s
             WHERE e.status = 'published'
+              AND e.deleted_at IS NULL
+              AND c.deleted_at IS NULL
               AND e.registration_deadline > NOW()
               AND (%(after_deadline)s::timestamptz IS NULL
                    OR (e.registration_deadline, e.event_id)
@@ -95,16 +101,43 @@ def feed(conn: Conn, student_id: int, *, limit: int, cursor: str | None) -> dict
     return {"items": items, "next_cursor": next_cursor}
 
 
+def announcements(conn: Conn, student_id: int) -> dict:
+    """Week 12, the cards on top of the home screen: open events of every
+    confirmed community, followed or not, so a student discovers new ones.
+    The soonest deadline first, at most 10."""
+    rows = conn.execute(
+        f"""
+        WITH page AS (
+            SELECT {_PAGE_COLUMNS}
+            FROM event e
+            JOIN community c ON c.community_id = e.community_id
+            WHERE e.status = 'published'
+              AND e.deleted_at IS NULL
+              AND c.deleted_at IS NULL AND c.status = 'confirmed'
+              AND e.registration_deadline > NOW()
+            ORDER BY e.registration_deadline, e.event_id
+            LIMIT {ANNOUNCEMENTS_LIMIT}
+        )
+        {_EVENT_SELECT}
+        """,  # noqa: S608 — only fixed fragments are interpolated, values are bound
+        {"student_id": student_id},
+    ).fetchall()
+    return {"items": rows}
+
+
 def event_detail(conn: Conn, student_id: int, event_id: int) -> dict:
     """Any published event, also from an unfollowed community or past its
-    deadline (the app renders it as closed, FR-02)."""
+    deadline (the app renders it as closed, FR-02). v4: a cancelled event is
+    shown too (status "cancelled"), so a registered student who opens the
+    push sees why it is gone."""
     row = conn.execute(
         f"""
         WITH page AS (
             SELECT {_PAGE_COLUMNS}
             FROM event e
             JOIN community c ON c.community_id = e.community_id
-            WHERE e.event_id = %(event_id)s AND e.status = 'published'
+            WHERE e.event_id = %(event_id)s AND e.status IN ('published', 'cancelled')
+              AND e.deleted_at IS NULL AND c.deleted_at IS NULL
         )
         {_EVENT_SELECT}
         """,  # noqa: S608 — only fixed fragments are interpolated, values are bound
@@ -123,11 +156,18 @@ def _lock_published_event(conn: Conn, event_id: int) -> dict:
     # so the second one reads the count after the first one has committed.
     event = conn.execute(
         """
-        SELECT event_id, participant_limit, registration_deadline, starts_at, status
-        FROM event WHERE event_id = %s FOR UPDATE
+        SELECT e.event_id, e.participant_limit, e.registration_deadline, e.starts_at, e.status
+        FROM event e
+        WHERE e.event_id = %s
+          AND e.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM community c
+                          WHERE c.community_id = e.community_id AND c.deleted_at IS NOT NULL)
+        FOR UPDATE
         """,
         (event_id,),
     ).fetchone()
+    if event is not None and event["status"] == "cancelled":
+        raise ApiError(409, "event_cancelled")
     if event is None or event["status"] != "published":
         raise ApiError(404, "event_not_found")
     return event
@@ -279,7 +319,8 @@ def publish(
     """Returns the new event id and the ids of the notifications to push."""
     with conn.transaction():
         community = conn.execute(
-            "SELECT owner_id, is_confirmed FROM community WHERE community_id = %s",
+            "SELECT owner_id, status = 'confirmed' AS is_confirmed FROM community "
+            "WHERE community_id = %s AND deleted_at IS NULL",
             (community_id,),
         ).fetchone()
         if community is None:
@@ -322,6 +363,7 @@ def create_publish_notifications(conn: Conn, event_id: int) -> list[int]:
         SELECT s.student_id, e.event_id, 'event_published'
         FROM event e
         JOIN subscription s ON s.community_id = e.community_id
+        JOIN student st     ON st.student_id = s.student_id AND st.deleted_at IS NULL
         WHERE e.event_id = %s
         ON CONFLICT (student_id, event_id, kind) DO NOTHING
         RETURNING notification_id

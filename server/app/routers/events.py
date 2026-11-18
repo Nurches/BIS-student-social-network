@@ -4,6 +4,7 @@ from ..db import Pool, get_pool
 from ..errors import error_responses
 from ..schemas import (
     CancelOut,
+    EventListResponse,
     EventOut,
     RegistrationConfirmedOut,
     RegistrationWaitingOut,
@@ -16,9 +17,23 @@ router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.get(
+    "/announcements",
+    response_model=EventListResponse,
+    summary="Announcement cards: open events of every confirmed community (at most 10)",
+    responses=error_responses("unauthorized"),
+)
+def announcements(
+    me: CurrentStudent = Depends(current_student), pool: Pool = Depends(get_pool)
+) -> dict:
+    """Week 12, the home screen carousel. Followed or not; soonest deadline first."""
+    with pool.connection() as conn:
+        return events.announcements(conn, me.student_id)
+
+
+@router.get(
     "/{event_id}",
     response_model=EventOut,
-    summary="One event with fresh free places",
+    summary="One event with fresh free places (v4: also a cancelled one)",
     responses=error_responses("unauthorized", "event_not_found", "validation_failed"),
 )
 def event_detail(
@@ -40,6 +55,7 @@ def event_detail(
             "unauthorized",
             "event_not_found",
             "already_registered",
+            "event_cancelled",
             "deadline_passed",
             "validation_failed",
         ),
@@ -65,7 +81,12 @@ def register(
     response_model=CancelOut,
     summary="Cancel own registration",
     responses=error_responses(
-        "unauthorized", "event_not_found", "not_registered", "event_started", "validation_failed"
+        "unauthorized",
+        "event_not_found",
+        "not_registered",
+        "event_cancelled",
+        "event_started",
+        "validation_failed",
     ),
 )
 def cancel(

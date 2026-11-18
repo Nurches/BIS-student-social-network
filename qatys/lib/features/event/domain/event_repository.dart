@@ -11,6 +11,10 @@ abstract interface class EventRepository {
   /// deadline has not passed, ordered by deadline.
   Future<FeedPage> fetchFeed({int limit = 20, String? cursor});
 
+  /// The announcement cards on top of the home screen: open events of every
+  /// confirmed community, followed or not, soonest deadline first (at most 10).
+  Future<List<Event>> fetchAnnouncements();
+
   /// One event with fresh `freePlaces` and `myState`. Called every time the
   /// detail screen opens, because cached feed numbers go stale in seconds.
   Future<Event> fetchEvent(int id);

@@ -50,6 +50,35 @@ class HttpCommunityRepository implements CommunityRepository {
     return _parse(() => eventListFromJson(response.json));
   }
 
+  @override
+  Future<CommunityRequestResult> requestCommunity({
+    required String name,
+    String? description,
+  }) async {
+    final response = await _api.post(
+      '/communities',
+      body: {'name': name, 'description': description},
+    );
+    if (response.statusCode == 409) {
+      final body = response.body;
+      final code = body is Map<String, Object?> ? body['error'] : null;
+      return code == 'too_many_pending_requests'
+          ? const CommunityRequestLimitReached()
+          : const CommunityNameTaken();
+    }
+    _expect(response, 201);
+    return _parse(
+      () => CommunityRequestSent(communityRequestFromJson(response.json)),
+    );
+  }
+
+  @override
+  Future<CommunityRequests> fetchMyRequests() async {
+    final response = await _api.get('/me/community-requests');
+    _expect(response, 200);
+    return _parse(() => communityRequestsFromJson(response.json));
+  }
+
   void _expect(ApiResponse response, int status) {
     if (response.statusCode != status) {
       throw UnexpectedResponseException(

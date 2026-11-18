@@ -42,6 +42,31 @@ the order matters:
 If W11-9 is not ready at the agreed reseed time, reseed without it and move W11-9 to Week 12
 (say so in `project-status.md`).
 
+### Week 12: one reseed brings schema v3 and v4 together
+
+The live database is still v2. The Week 12 code (community requests, pushes on cancel and
+reschedule, announcement cards) needs schema v4, which contains v3. So W11-9 and Week 12 go
+live **in one reseed**:
+
+1. Members' live runs on the deployed code are done (or postponed to the new build).
+2. Commit W11-9 first, then Week 12 (see the commit list in the hand-over), **do not push**.
+3. Reseed from this checkout (section 2): the live database becomes v4. Debate Society is now
+   a *pending request* of `akbota@` — the demo approves it in `/admin` → **Requests**.
+4. **Push at once.** During the 3–5 minute redeploy the old code reads v4 fine; only creating
+   a community in `/admin` fails until the new code is live.
+5. Upload the new TestFlight build (`qatys/tool/build_ios_release.sh`): the old build cannot
+   read an inbox that contains a `community_approved` notification.
+
+Without a reseed, `docs/migrations/003_…` then `004_…` upgrade the data in place (psql).
+
+Demo chain of Week 12 (both features as one story, about 3 minutes):
+
+1. Phone A (`aru@` or a member): Explore → **Request a community** → "Chess Club" → *In review*.
+2. `/admin` as `union@kbtu.kz` → **Requests** → Approve. Phone A gets "Community approved".
+3. Phone A's owner publishes an event in `/admin` (log in as that student); phone B registers.
+4. Owner moves the event (Edit → new start) → phone B gets "Event moved", the page says *Moved*.
+5. Owner cancels it → phone B gets "Event cancelled"; the page and My events say *Cancelled*.
+
 ## 2. Reseed, step by step (about 15 minutes)
 
 ```bash

@@ -1,4 +1,4 @@
-# API v0.2
+# API v0.2 (+ Week 12, schema v4)
 
 Base URL `/api/v1` · JSON only · every endpoint except `/health` and `/auth/*` requires
 `Authorization: Bearer <token>`.
@@ -13,6 +13,20 @@ cursor, the lockout rule and the error format. Database changes are in
 
 **Week 11 (2026-11-10):** error responses are documented in Swagger for every endpoint (D-01);
 `password_too_long` (422 on register) was raised by the server but missing here, now listed.
+Schema v3 (`docs/migrations/003_soft_delete_and_faculty.sql`): `faculty` is a code, an
+unknown one answers `422 unknown_faculty`; **soft delete** — a student, community or event
+with `deleted_at` set is invisible to the API: not in the feed, `404` for its event page,
+registration and publishing, `401` for its login and tokens, no notifications. There is no
+delete endpoint yet (`TODO(confirm)`).
+
+**Week 12 (2026-11-17), schema v4** (`docs/migrations/004_community_requests_and_event_changes.sql`):
+any student **requests a community** (`POST /communities`, `GET /me/community-requests`), a
+moderator approves or rejects it in the admin panel (approval pushes `community_approved`);
+**cancelling or moving an event** pushes `event_cancelled` / `event_rescheduled` to every
+confirmed or waiting student; the Event object gains `status`, `previous_starts_at`,
+`cancelled_at`; a cancelled event stays readable; **announcement cards** for the home screen
+(`GET /events/announcements`). A client older than this version cannot read an inbox with a
+`community_approved` row (`event_id` is `null` there): ship the new app build with it.
 
 ## Conventions
 
@@ -72,8 +86,10 @@ Creates an account. Implements BR-01.
   "faculty": "IT", "enrolled_year": 2026 }
 ```
 
-`faculty` and `enrolled_year` are optional. The email is trimmed and lower-cased before any
-check. The password is stored as a bcrypt hash with cost 12 (NFR-02).
+`faculty` and `enrolled_year` are optional. `faculty` is a **code** of the `faculty` table
+(schema v3): `SITE`, `BS`, `ISE`, `IT`, `Student Union`; matched without regard to case
+(`TODO(confirm)`). The email is trimmed and lower-cased before any check. The password is
+stored as a bcrypt hash with cost 12 (NFR-02).
 
 | Code | Body |
 |---|---|
@@ -81,6 +97,7 @@ check. The password is stored as a bcrypt hash with cost 12 (NFR-02).
 | 422 | `{ "error": "not_a_university_email" }` — BR-01 |
 | 422 | `{ "error": "password_too_short" }` — under 8 characters |
 | 422 | `{ "error": "password_too_long" }` — over 72 bytes (bcrypt reads only 72; refused instead of silently cut) |
+| 422 | `{ "error": "unknown_faculty" }` — `faculty` is not a code of the `faculty` table (`TODO(confirm)`) |
 | 409 | `{ "error": "email_already_registered" }` |
 
 For the demo the account is active at once; no verification email is sent (known
@@ -159,7 +176,10 @@ Used by the feed and by `GET /events/{id}`.
   "participant_limit": 30,
   "free_places": 27,
   "my_status": "waiting_list",
-  "waiting_position": 3
+  "waiting_position": 3,
+  "status": "published",
+  "previous_starts_at": "2026-11-19T10:00:00+05:00",
+  "cancelled_at": null
 }
 ```
 
@@ -169,6 +189,9 @@ Used by the feed and by `GET /events/{id}`.
 | `free_places` | `participant_limit` minus confirmed registrations, never below 0 |
 | `my_status` | `null` (not registered or cancelled), `"confirmed"` or `"waiting_list"` |
 | `waiting_position` | 1-based place in the queue when `my_status = "waiting_list"`, otherwise `null` |
+| `status` | v4: `"published"` or `"cancelled"` (a cancelled event is shown only by `GET /events/{id}` and `GET /me/registrations`) |
+| `previous_starts_at` | v4: the start before the organiser last moved the event; `null` if never moved |
+| `cancelled_at` | v4: when the event was cancelled, otherwise `null` |
 
 The queue is ordered by `registration.updated_at`, then `registration_id`: the moment the
 student joined the waiting list, not when they first registered for the event.
@@ -180,12 +203,20 @@ time it opens, because the feed copy may be stale.
 
 Any authenticated student can open any **published** event, including one from a community
 they do not follow (a link from a friend) and one whose deadline has passed (the app shows it
-as closed, FR-02).
+as closed, FR-02). v4: a **cancelled** event answers `200` with `status: "cancelled"`, so a
+student who opens the cancellation push sees what happened. Registering for it or cancelling
+a place in it answers `409 { "error": "event_cancelled" }`.
 
 | Code | Body |
 |---|---|
 | 200 | Event object |
-| 404 | `{ "error": "event_not_found" }` — no such event, or it is `draft` / `cancelled` |
+| 404 | `{ "error": "event_not_found" }` — no such event, or it is a `draft` |
+
+## GET /events/announcements
+
+Week 12: `{ "items": [Event, …] }` for the cards on top of the home screen — published events
+of **every confirmed community, followed or not**, whose deadline has not passed, soonest
+deadline first, at most 10. The feed below the cards stays "communities I follow".
 
 ## POST /communities/{id}/events
 
@@ -346,15 +377,41 @@ notification. All need the token; errors as in "Conventions" (Swagger lists them
 
 ### GET /communities
 
-Every community, ordered by name.
+Confirmed communities, plus the caller's own pending request (v4), ordered by name. Another
+student's pending or rejected request is not listed.
 
 ```json
 [ { "community_id": 4, "name": "Sports Club", "description": "Futsal, volleyball and …",
-    "is_confirmed": true, "subscriber_count": 56, "upcoming_events": 1, "is_subscribed": false } ]
+    "is_confirmed": true, "status": "confirmed", "is_mine": false,
+    "subscriber_count": 56, "upcoming_events": 1, "is_subscribed": false } ]
 ```
 
-`is_confirmed`: confirmed by the Student Union, may publish (BR-01); an unconfirmed one can be
-followed but publishes nothing. `upcoming_events`: published, deadline not passed.
+`status`: `pending` | `confirmed` | `rejected`; `is_confirmed` = `status == "confirmed"` (kept
+for older readers): only a confirmed community publishes (BR-01) and can be followed (else
+`404 community_not_found`). `upcoming_events`: published, deadline not passed.
+
+### POST /communities (Week 12)
+
+Any student asks the Student Union for a new community; the caller becomes its owner.
+
+```json
+{ "name": "Chess Club", "description": "Blitz on Fridays" }
+```
+
+| Code | Body |
+|---|---|
+| 201 | `{ "community_id", "name", "description", "status": "pending", "reject_reason": null, "created_at", "reviewed_at": null }` |
+| 409 | `{ "error": "community_name_taken" }` — a pending or confirmed community has this name, ignoring case (a rejected name is free) |
+| 409 | `{ "error": "too_many_pending_requests" }` — 3 requests of this student already wait |
+| 422 | `validation_failed` — name shorter than 3 or longer than 120 characters |
+
+A pending community publishes nothing and gives its owner no admin panel. After approval the
+owner gets the `community_approved` push and publishes in `/admin`.
+
+### GET /me/community-requests (Week 12)
+
+`{ "items": [same object as above, …], "pending_limit": 3 }` — every community the student
+asked for (or owns), newest first, with `status`, `reject_reason` and `reviewed_at`.
 
 ### PUT | DELETE /communities/{id}/subscription
 
@@ -372,18 +429,27 @@ community_not_found`.
 
 `{ "items": [Event, …] }` — events the student is `confirmed` for or on the `waiting_list` of,
 past ones included (the app splits "Upcoming" and "Past"). Cancelled rows are not listed.
+v4: an event the organiser cancelled stays here with `status: "cancelled"`.
 
 ### GET /me/notifications · POST /me/notifications/read
 
 The in-app inbox: the same `notification` rows the pushes were sent for, so a missed push
-(silent phone, no network) is not lost. Newest first, at most 50, only published events.
+(silent phone, no network) is not lost. Newest first, at most 50, only published events —
+plus, in v4, `event_cancelled` rows of cancelled events and `community_approved` rows.
 
 ```json
-{ "items": [ { "notification_id": 31, "kind": "waiting_list_promoted", "event_id": 7,
-               "event_title": "Futsal cup", "community_name": "Sports Club",
+{ "items": [ { "notification_id": 31, "kind": "event_rescheduled", "event_id": 7,
+               "community_id": 4, "event_title": "Futsal cup", "community_name": "Sports Club",
+               "starts_at": "2026-11-22T17:00:00+05:00",
+               "previous_starts_at": "2026-11-20T17:00:00+05:00",
                "created_at": "2026-11-11T08:00:00+00:00", "is_read": false } ],
   "unread_count": 1 }
 ```
+
+`kind`: `event_published` | `waiting_list_promoted` | `event_cancelled` | `event_rescheduled` |
+`community_approved`. For `community_approved` `event_id`, `event_title`, `starts_at` are
+`null`. Push `data`: `{ "type": <kind>, "event_id": "7" }`, or `{ "type":
+"community_approved", "community_id": "9" }`.
 
 `POST /me/notifications/read` marks all of the student's notifications read; `204`.
 
@@ -395,23 +461,25 @@ Two kinds of admin, read from the database on every request:
 * **Moderator** of the Student Union (`student.is_moderator`, seed: `union@kbtu.kz`) — sees
   and manages everything: creates communities, chooses their owner, confirms them (BR-01),
   manages students.
-* **Community owner** (`community.owner_id`) — sees only the communities they own and their
-  events.
+* **Community owner** (`community.owner_id`) of a **confirmed** community (v4) — sees only
+  the communities they own and their events. A pending request gives no admin access.
 
 Anyone else: `403 { "error": "not_an_admin" }`. Publishing stays
 `POST /communities/{id}/events` above, so BR-01 is checked in one place. Errors of every
-endpoint are listed in Swagger (tag *admin panel*). The schema is not changed (v2).
+endpoint are listed in Swagger (tag *admin panel*). Week 12 adds the review of community requests (schema v4).
 
 | Endpoint | Who | What |
 |---|---|---|
 | `GET /admin/me` | admin | Account, `is_moderator`, owned communities |
 | `GET /admin/overview` | admin | Counts over the caller's scope; `students` and `devices` only for a moderator (else `null`) |
-| `GET /admin/communities` | admin | Communities with owner, `subscriber_count`, `published_events`, `open_events` |
+| `GET /admin/communities?status=` | admin | Communities with owner, `status`, `reject_reason`, `reviewed_at`, `subscriber_count`, `published_events`, `open_events`; `?status=pending` = the requests |
+| `POST /admin/communities/{id}/approve` | moderator | Week 12: `pending` → `confirmed`; the owner gets the `community_approved` push → `{ "community", "notified": 1 }`; `409 community_not_pending`, `403 cannot_review_own_request` |
+| `POST /admin/communities/{id}/reject` | moderator | Week 12: `{ "reason"? }` (≤ 300, shown to the student) → `rejected`, no push, the name is free again; same errors |
 | `POST /admin/communities` | moderator | `{ "name", "description"?, "owner_email", "is_confirmed": true }` → `201`; `404 student_not_found`, `409 community_name_taken` |
-| `PATCH /admin/communities/{id}` | moderator | Any of `name`, `description` (`null` clears), `owner_email`, `is_confirmed` |
+| `PATCH /admin/communities/{id}` | moderator | Any of `name`, `description` (`null` clears), `owner_email`, `is_confirmed` (`true` on an unconfirmed one = approval with push; `false` = back to `pending`) |
 | `GET /admin/events?community_id=` | admin | Every status, past included, newest deadline first, at most 300; `state` = `open \| closed \| finished \| cancelled \| draft`, `confirmed_count`, `waiting_count`, `notified_count`, `sent_count` |
-| `PATCH /admin/events/{id}` | owner / moderator | Any of `title`, `description`, `location`, `starts_at`, `registration_deadline`, `participant_limit` → `{ "event", "promoted" }` |
-| `POST /admin/events/{id}/cancel` | owner / moderator | `status = 'cancelled'`; `409 event_cancelled` the second time |
+| `PATCH /admin/events/{id}` | owner / moderator | Any of `title`, `description`, `location`, `starts_at`, `registration_deadline`, `participant_limit` → `{ "event", "promoted", "rescheduled_notified" }` |
+| `POST /admin/events/{id}/cancel` | owner / moderator | `status = 'cancelled'`, `cancelled_at`; every confirmed or waiting student gets `event_cancelled` → `{ "event", "notified" }`; `409 event_cancelled` the second time, `410 event_started` once it has started |
 | `POST /admin/events/{id}/notify` | owner / moderator | Notifies followers who joined after publication and resends pushes FCM has not accepted → `{ "new_recipients", "queued" }` |
 | `GET /admin/events/{id}/registrations` | owner / moderator | `{ "event", "items" }`: confirmed, then the waiting list with `position`, then cancelled |
 | `GET /admin/notifications?event_id=` | admin | Delivery log, newest first, at most 200: `sent_at` (`null` = not accepted by FCM), the student's `devices` now |
@@ -430,10 +498,14 @@ Rules of `PATCH /admin/events/{id}`:
 * a **larger** limit moves students up from the waiting list in queue order at once; each gets
   the `waiting_list_promoted` notification and push, as after a cancellation (FR-03).
 
-Editing does not re-notify the followers. Cancelling hides the event from the feed, the event
-page, `GET /me/registrations` and the inbox, and keeps the registrations; it sends **no push**,
-because `notification.kind` has no value for it (`TODO(confirm)`: an `event_cancelled` kind is a
-schema change).
+* v4: a new `starts_at` is a **reschedule**: it must be in the future (`422
+  start_in_the_past`), the old start is kept in `previous_starts_at`, and every confirmed or
+  waiting student gets the `event_rescheduled` push (a second move re-sends the same
+  notification row).
+
+Other edits do not re-notify the followers. Cancelling removes the event from the feed and
+the announcements and keeps the registrations; the registered students get the push, and the
+event page and "My events" show it as cancelled.
 
 ## Tools (not part of the product)
 
@@ -494,8 +566,7 @@ database name, never the user or the password. Timestamps in `rows` are ISO 8601
 
 - editing an already published event: which changes re-notify the subscribers? (now: none;
   only students promoted by a larger limit get a push);
-- cancelling an event: notify everyone who registered (now: hidden without a push, see
-  "Admin panel");
+- ~~cancelling an event: notify everyone who registered~~ — done (Week 12, schema v4);
 - ~~moderator endpoints (confirming a community)~~ — done (admin panel); blocking a user is
   the soft delete of schema v3;
 - ~~subscribe / unsubscribe endpoints~~ — done (MVP extension, see above).

@@ -53,16 +53,18 @@ def register(
     if len(password.encode()) > MAX_PASSWORD_BYTES:
         raise ApiError(422, "password_too_long")
 
+    faculty_id = _faculty_id(conn, faculty)
+
     password_hash = hash_password(password, settings.bcrypt_rounds)
     try:
         with conn.transaction():
             row = conn.execute(
                 """
-                INSERT INTO student (email, full_name, password_hash, faculty, enrolled_year)
+                INSERT INTO student (email, full_name, password_hash, faculty_id, enrolled_year)
                 VALUES (%s, %s, %s, %s, %s)
                 RETURNING student_id, email, full_name
                 """,
-                (email, full_name, password_hash, faculty, enrolled_year),
+                (email, full_name, password_hash, faculty_id, enrolled_year),
             ).fetchone()
     except errors.UniqueViolation as exc:
         raise ApiError(409, "email_already_registered") from exc
@@ -70,6 +72,19 @@ def register(
     # active at once (roadmap §3, out of scope until after Week 15).
     assert row is not None
     return row
+
+
+def _faculty_id(conn: Conn, code: str | None) -> int | None:
+    """Schema v3: `faculty` is a code of the faculty table (e.g. "SITE")."""
+    if code is None or not code.strip():
+        return None
+    # TODO(confirm): codes are matched without regard to case ("site" = "SITE").
+    row = conn.execute(
+        "SELECT faculty_id FROM faculty WHERE LOWER(code) = LOWER(%s)", (code.strip(),)
+    ).fetchone()
+    if row is None:
+        raise ApiError(422, "unknown_faculty")
+    return row["faculty_id"]
 
 
 @dataclass(frozen=True)
@@ -118,7 +133,7 @@ def _check_credentials(
             """
             SELECT student_id, email, full_name, password_hash,
                    failed_logins, first_failed_login_at, locked_until
-            FROM student WHERE email = %s FOR UPDATE
+            FROM student WHERE email = %s AND deleted_at IS NULL FOR UPDATE
             """,
             (email,),
         ).fetchone()

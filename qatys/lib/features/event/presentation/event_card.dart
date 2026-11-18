@@ -32,6 +32,12 @@ class EventCard extends StatelessWidget {
     final closed = event.isDeadlinePassed(now);
 
     final status = switch (event.myState) {
+      _ when event.isCancelled => const Pill(
+        text: 'Cancelled',
+        icon: Icons.event_busy,
+        background: Color(0xFFFDE2E1),
+        foreground: Color(0xFF8A1C1C),
+      ),
       RegistrationState.registered => const Pill(
         text: 'Registered ✓',
         background: Color(0xFFDDF3E4),
@@ -48,10 +54,17 @@ class EventCard extends StatelessWidget {
       RegistrationState.none => null,
     };
 
+    final accent = communityColor(event.communityId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Card(
         clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radius),
+          side: BorderSide(color: colors.outlineVariant),
+        ),
+        shadowColor: accent.withValues(alpha: 0.25),
+        elevation: event.isCancelled ? 0 : 1.5,
         child: InkWell(
           onTap: () async {
             await Navigator.of(context).push(
@@ -61,69 +74,108 @@ class EventCard extends StatelessWidget {
             );
             onReturn?.call();
           },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    CommunityAvatar(
-                      communityId: event.communityId,
-                      name: event.communityName,
-                      size: 32,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        event.communityName,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: colors.onSurfaceVariant,
+          child: DecoratedBox(
+            // A stripe in the community's colour: the club at a glance.
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  color: event.isCancelled ? colors.outline : accent,
+                  width: 5,
+                ),
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 16, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CommunityAvatar(
+                        communityId: event.communityId,
+                        name: event.communityName,
+                        size: 32,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          event.communityName,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        overflow: TextOverflow.ellipsis,
+                      ),
+                      ?status,
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    event.title,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      height: 1.2,
+                      decoration: event.isCancelled
+                          ? TextDecoration.lineThrough
+                          : null,
+                      color: event.isCancelled ? colors.onSurfaceVariant : null,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 10),
+                  _Line(
+                    icon: Icons.event_outlined,
+                    text: 'Starts ${formatDateTime(event.startsAt)}',
+                  ),
+                  if (event.previousStartsAt case final before?
+                      when !event.isCancelled) ...[
+                    const SizedBox(height: 4),
+                    _Line(
+                      icon: Icons.update,
+                      text: 'Moved · was ${formatDateTime(before)}',
+                      color: const Color(0xFF7A4B00),
+                      bold: true,
+                    ),
+                  ],
+                  if (event.isCancelled) ...[
+                    const SizedBox(height: 4),
+                    const _Line(
+                      icon: Icons.info_outline,
+                      text: 'The organiser cancelled this event.',
+                      color: Color(0xFF8A1C1C),
+                      bold: true,
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 4),
+                    _Line(
+                      icon: Icons.timer_outlined,
+                      text:
+                          'Register by ${formatDateTime(event.registrationDeadline)} '
+                          '(${timeLeft(event.registrationDeadline, now)})',
+                      color: soon || closed ? AppTheme.urgent : null,
+                      bold: true,
+                    ),
+                    const SizedBox(height: 12),
+                    CapacityBar(
+                      freePlaces: event.freePlaces,
+                      limit: event.participantLimit,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      event.isFull
+                          ? 'Full · waiting list open'
+                          : '${event.freePlaces} of ${event.participantLimit} '
+                                'places free',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: event.isFull
+                            ? AppTheme.urgent
+                            : colors.onSurface,
                       ),
                     ),
-                    ?status,
                   ],
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  event.title,
-                  style: theme.textTheme.titleLarge?.copyWith(height: 1.2),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 10),
-                _Line(
-                  icon: Icons.event_outlined,
-                  text: 'Starts ${formatDateTime(event.startsAt)}',
-                ),
-                const SizedBox(height: 4),
-                _Line(
-                  icon: Icons.timer_outlined,
-                  text:
-                      'Register by ${formatDateTime(event.registrationDeadline)} '
-                      '(${timeLeft(event.registrationDeadline, now)})',
-                  color: soon || closed ? AppTheme.urgent : null,
-                  bold: true,
-                ),
-                const SizedBox(height: 12),
-                CapacityBar(
-                  freePlaces: event.freePlaces,
-                  limit: event.participantLimit,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  event.isFull
-                      ? 'Full · waiting list open'
-                      : '${event.freePlaces} of ${event.participantLimit} '
-                            'places free',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: event.isFull ? AppTheme.urgent : colors.onSurface,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

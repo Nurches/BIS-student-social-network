@@ -2,10 +2,30 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// A push shown while the app is open (Android does not display those).
 class PushNotice {
-  const PushNotice({required this.title, required this.eventId});
+  const PushNotice({
+    required this.title,
+    required this.eventId,
+    this.body = '',
+    this.type = 'event_published',
+    this.communityId,
+  });
 
   final String title;
-  final int eventId;
+  final String body;
+
+  /// `data.type` of docs/api.md, e.g. `event_cancelled`.
+  final String type;
+
+  /// Null only for `community_approved`, which carries [communityId].
+  final int? eventId;
+  final int? communityId;
+
+  /// The snackbar line.
+  String get text => switch (type) {
+    'event_published' => 'New event: $title',
+    _ when body.isEmpty => title,
+    _ => '$title — $body',
+  };
 }
 
 /// Firebase Cloud Messaging behind an interface, so the app runs without
@@ -77,3 +97,7 @@ final pushServiceProvider = Provider<PushService>(
 /// `data: { "type": ..., "event_id": "17" }` of docs/api.md.
 int? eventIdFromData(Map<String, Object?> data) =>
     int.tryParse('${data['event_id'] ?? ''}');
+
+/// `community_approved` pushes carry `community_id` instead (Week 12).
+int? communityIdFromData(Map<String, Object?> data) =>
+    int.tryParse('${data['community_id'] ?? ''}');

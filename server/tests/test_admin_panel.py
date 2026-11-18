@@ -312,7 +312,7 @@ def test_larger_limit_promotes_the_waiting_list_in_order_with_pushes(
     assert {m.title for m in push.sent} == {"You got a place"}
 
 
-def test_cancel_hides_the_event_from_students(client: TestClient, data: Data) -> None:
+def test_cancel_removes_the_event_from_the_feed(client: TestClient, data: Data) -> None:
     owner, fan = data.student(), data.student()
     community = data.community(owner)
     data.subscribe(fan, community)
@@ -321,11 +321,15 @@ def test_cancel_hides_the_event_from_students(client: TestClient, data: Data) ->
 
     cancelled = client.post(f"{A}/events/{event}/cancel", headers=headers)
     assert cancelled.status_code == 200
-    assert cancelled.json()["state"] == "cancelled"
+    assert cancelled.json()["event"]["state"] == "cancelled"
+    assert cancelled.json()["notified"] == 0  # the fan follows but is not registered
 
     fan_headers = data.headers(fan)
     assert client.get("/api/v1/feed", headers=fan_headers).json()["items"] == []
-    assert client.get(f"/api/v1/events/{event}", headers=fan_headers).status_code == 404
+    # v4: the page stays reachable and says "cancelled".
+    page = client.get(f"/api/v1/events/{event}", headers=fan_headers).json()
+    assert page["status"] == "cancelled"
+    assert page["cancelled_at"] is not None
 
     again = client.post(f"{A}/events/{event}/cancel", headers=headers)
     assert again.json() == {"error": "event_cancelled"}

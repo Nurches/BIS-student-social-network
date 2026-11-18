@@ -178,6 +178,8 @@ class EventDetailController extends AsyncNotifier<EventDetailState> {
               'list — you get a notification if a place frees up.',
         RegistrationAlreadyExists() => 'You are already registered.',
         RegistrationClosed() => 'Registration for this event is closed.',
+        RegistrationEventCancelled() =>
+          'The organiser cancelled this event, so registration is closed.',
       };
 
   static String _cancelMessage(CancelResult result) => switch (result) {
@@ -185,5 +187,7 @@ class EventDetailController extends AsyncNotifier<EventDetailState> {
     CancelNotRegistered() => 'You were not registered for this event.',
     CancelEventStarted() =>
       'The event has already started; it can no longer be cancelled.',
+    CancelEventCancelled() =>
+      'The organiser cancelled the whole event; your place is released.',
   };
 }

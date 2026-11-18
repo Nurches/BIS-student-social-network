@@ -76,73 +76,57 @@ class _Body extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          _Hero(event: event),
+          if (event.isCancelled)
+            const _Notice(
+              key: ValueKey('cancelled-notice'),
+              icon: Icons.event_busy,
+              text:
+                  'Cancelled by the organiser. It will not take place; '
+                  'nothing else to do.',
+              background: Color(0xFFFDE2E1),
+              foreground: Color(0xFF8A1C1C),
+            )
+          else if (event.previousStartsAt case final before?)
+            _Notice(
+              key: const ValueKey('moved-notice'),
+              icon: Icons.update,
+              text:
+                  'Moved to ${formatDateTime(event.startsAt)} '
+                  '(was ${formatDateTime(before)}).',
+              background: const Color(0xFFFFF1D6),
+              foreground: const Color(0xFF7A4B00),
+            ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // The community opens its own page: follow it from there.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          CommunityScreen(communityId: event.communityId),
-                    ),
+                // A cancelled event: registration numbers no longer matter.
+                if (!event.isCancelled) ...[
+                  _Fact(
+                    icon: Icons.timer_outlined,
+                    label: 'Register by',
+                    value:
+                        '${formatDateTime(event.registrationDeadline)} '
+                        '(${timeLeft(event.registrationDeadline, now)})',
+                    key: const ValueKey('deadline'),
+                    highlight:
+                        isClosingSoon(event.registrationDeadline, now) ||
+                            event.isDeadlinePassed(now)
+                        ? AppTheme.urgent
+                        : null,
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CommunityAvatar(
-                          communityId: event.communityId,
-                          name: event.communityName,
-                          size: 24,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            event.communityName,
-                            style: theme.textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right, size: 18),
-                      ],
-                    ),
+                  _Fact(
+                    icon: Icons.event_seat_outlined,
+                    label: 'Free places',
+                    value: event.isFull
+                        ? 'None — waiting list open'
+                        : '${event.freePlaces} of ${event.participantLimit}',
+                    key: const ValueKey('free-places'),
+                    highlight: event.isFull ? AppTheme.urgent : null,
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  event.title,
-                  style: theme.textTheme.headlineSmall,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                _Fact(
-                  icon: Icons.timer_outlined,
-                  label: 'Register by',
-                  value:
-                      '${formatDateTime(event.registrationDeadline)} '
-                      '(${timeLeft(event.registrationDeadline, now)})',
-                  key: const ValueKey('deadline'),
-                  highlight:
-                      isClosingSoon(event.registrationDeadline, now) ||
-                          event.isDeadlinePassed(now)
-                      ? AppTheme.urgent
-                      : null,
-                ),
-                _Fact(
-                  icon: Icons.event_seat_outlined,
-                  label: 'Free places',
-                  value: event.isFull
-                      ? 'None — waiting list open'
-                      : '${event.freePlaces} of ${event.participantLimit}',
-                  key: const ValueKey('free-places'),
-                  highlight: event.isFull ? AppTheme.urgent : null,
-                ),
+                ],
                 _Fact(
                   icon: Icons.schedule,
                   label: 'Starts',
@@ -154,11 +138,13 @@ class _Body extends ConsumerWidget {
                     label: 'Where',
                     value: location,
                   ),
-                const SizedBox(height: 8),
-                CapacityBar(
-                  freePlaces: event.freePlaces,
-                  limit: event.participantLimit,
-                ),
+                if (!event.isCancelled) ...[
+                  const SizedBox(height: 8),
+                  CapacityBar(
+                    freePlaces: event.freePlaces,
+                    limit: event.participantLimit,
+                  ),
+                ],
               ],
             ),
           ),
@@ -213,6 +199,149 @@ class _Body extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The coloured header: community (opens its page), title, date tile.
+class _Hero extends StatelessWidget {
+  const _Hero({required this.event});
+
+  final Event event;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gradient = event.isCancelled
+        ? const LinearGradient(colors: [Color(0xFF6B7280), Color(0xFF374151)])
+        : communityGradient(event.communityId);
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -14,
+            bottom: -20,
+            child: Icon(
+              eventIcon(event.title, event.communityName),
+              size: 120,
+              color: Colors.white.withValues(alpha: 0.12),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // The community opens its own page: follow it from there.
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          CommunityScreen(communityId: event.communityId),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: CommunityAvatar(
+                            communityId: event.communityId,
+                            name: event.communityName,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            event.communityName,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  event.title,
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    height: 1.15,
+                    decoration: event.isCancelled
+                        ? TextDecoration.lineThrough
+                        : null,
+                    decorationColor: Colors.white,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Notice extends StatelessWidget {
+  const _Notice({
+    required this.icon,
+    required this.text,
+    required this.background,
+    required this.foreground,
+    super.key,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    liveRegion: true,
+    child: Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: foreground),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _Fact extends StatelessWidget {
@@ -313,6 +442,18 @@ class _Action extends ConsumerWidget {
       onPressed: busy ? null : onPressed,
       child: busy ? const _Progress() : Text(label),
     );
+
+    if (event.isCancelled) {
+      return FilledButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.event_busy),
+        label: Text(
+          event.myState == RegistrationState.none
+              ? 'Event cancelled'
+              : 'Event cancelled · your place is released',
+        ),
+      );
+    }
 
     if (pending case final pending?) {
       return Column(

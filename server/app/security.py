@@ -76,7 +76,7 @@ def current_student(
     settings: Settings = Depends(get_settings),
 ) -> CurrentStudent:
     """401 `unauthorized` for a missing, malformed, forged or expired token,
-    and for a token whose student no longer exists."""
+    and for a token whose student no longer exists or was soft-deleted."""
     if credentials is None:
         raise ApiError(401, "unauthorized")
     try:
@@ -92,7 +92,8 @@ def current_student(
 
     with pool.connection() as conn:
         row = conn.execute(
-            "SELECT student_id, email, full_name FROM student WHERE student_id = %s",
+            "SELECT student_id, email, full_name FROM student "
+            "WHERE student_id = %s AND deleted_at IS NULL",
             (student_id,),
         ).fetchone()
     if row is None:

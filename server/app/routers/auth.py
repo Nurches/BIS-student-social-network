@@ -21,6 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
         "not_a_university_email",
         "password_too_short",
         "password_too_long",
+        "unknown_faculty",
         "validation_failed",
     ),
 )

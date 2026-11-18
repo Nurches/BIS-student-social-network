@@ -22,6 +22,13 @@ class HttpEventRepository implements EventRepository {
   }
 
   @override
+  Future<List<Event>> fetchAnnouncements() async {
+    final response = await _api.get('/events/announcements');
+    _expect(response, 200);
+    return _parse(() => eventListFromJson(response.json));
+  }
+
+  @override
   Future<Event> fetchEvent(int id) async {
     final response = await _api.get('/events/$id');
     if (response.statusCode == 404) {
@@ -37,6 +44,8 @@ class HttpEventRepository implements EventRepository {
     return switch (response.statusCode) {
       201 => const RegistrationConfirmed(),
       200 => _parse(() => waitListedFromJson(response.json)),
+      409 when _errorCode(response) == 'event_cancelled' =>
+        const RegistrationEventCancelled(),
       409 => const RegistrationAlreadyExists(),
       410 => const RegistrationClosed(),
       404 => throw NotFoundException('Event $eventId not found'),
@@ -55,6 +64,8 @@ class HttpEventRepository implements EventRepository {
         const CancelNotRegistered(),
       404 => throw NotFoundException('Event $eventId not found'),
       410 => const CancelEventStarted(),
+      409 when _errorCode(response) == 'event_cancelled' =>
+        const CancelEventCancelled(),
       _ => throw _unexpected(response),
     };
   }

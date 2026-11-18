@@ -37,7 +37,9 @@ class RegisterRequest(_Body):
     email: str = Field(max_length=120)
     password: str = Field(max_length=200)  # length rules give their own error codes
     full_name: str = Field(min_length=1, max_length=120)
-    faculty: str | None = Field(default=None, max_length=80)
+    faculty: str | None = Field(
+        default=None, max_length=40, description="Faculty code, e.g. SITE (table `faculty`)"
+    )
     enrolled_year: int | None = Field(default=None, ge=1990, le=2100)
 
 
@@ -73,6 +75,13 @@ class EventOut(BaseModel):
     free_places: int
     my_status: Literal["confirmed", "waiting_list"] | None
     waiting_position: int | None
+    status: Literal["published", "cancelled"] = Field(
+        description="v4: a cancelled event stays visible to the students registered for it"
+    )
+    previous_starts_at: AwareDatetime | None = Field(
+        description="v4: the start before the last reschedule; null if never moved"
+    )
+    cancelled_at: AwareDatetime | None
 
 
 class FeedResponse(BaseModel):
@@ -155,26 +164,67 @@ class DataChecksReport(BaseModel):
 # ---------- communities and the student's own lists (MVP extension) ----------
 
 
+CommunityStatus = Literal["pending", "confirmed", "rejected"]
+
+
 class CommunityOut(BaseModel):
     community_id: int
     name: str
     description: str | None
     is_confirmed: bool = Field(description="Confirmed by the Student Union: may publish (BR-01)")
+    status: CommunityStatus = Field(
+        description="v4: others see only confirmed communities; the owner also sees a pending one"
+    )
+    is_mine: bool = Field(description="The caller owns it (requested it)")
     subscriber_count: int
     upcoming_events: int = Field(description="Published events whose deadline has not passed")
     is_subscribed: bool
+
+
+class CommunityRequestCreate(_Body):
+    name: str = Field(min_length=3, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+class CommunityRequestOut(BaseModel):
+    """A community the caller asked for, with the Student Union's answer."""
+
+    community_id: int
+    name: str
+    description: str | None
+    status: CommunityStatus
+    reject_reason: str | None = Field(description="Set by the moderator on a rejection")
+    created_at: AwareDatetime
+    reviewed_at: AwareDatetime | None
+
+
+class CommunityRequestsResponse(BaseModel):
+    items: list[CommunityRequestOut]
+    pending_limit: int = Field(description="At most this many pending requests per student")
 
 
 class EventListResponse(BaseModel):
     items: list[EventOut]
 
 
+NotificationKind = Literal[
+    "event_published",
+    "waiting_list_promoted",
+    "event_cancelled",
+    "event_rescheduled",
+    "community_approved",
+]
+
+
 class NotificationOut(BaseModel):
     notification_id: int
-    kind: Literal["event_published", "waiting_list_promoted"]
-    event_id: int
-    event_title: str
+    kind: NotificationKind
+    event_id: int | None = Field(description="Null only for `community_approved`")
+    community_id: int
+    event_title: str | None = Field(description="Null only for `community_approved`")
     community_name: str
+    starts_at: AwareDatetime | None = Field(description="The event start now (after a move)")
+    previous_starts_at: AwareDatetime | None
     created_at: AwareDatetime
     is_read: bool
 
@@ -191,6 +241,7 @@ class AdminCommunityRef(BaseModel):
     community_id: int
     name: str
     is_confirmed: bool
+    status: CommunityStatus
 
 
 class AdminMeOut(BaseModel):
@@ -207,6 +258,7 @@ class AdminOverviewOut(BaseModel):
 
     communities: int
     unconfirmed_communities: int
+    pending_requests: int = Field(description="v4: community requests waiting for a moderator")
     subscribers: int = Field(description="Distinct students following a community in scope")
     open_events: int = Field(description="Published, registration deadline not passed")
     published_events: int
@@ -231,11 +283,23 @@ class AdminCommunityOut(BaseModel):
     name: str
     description: str | None
     is_confirmed: bool
+    status: CommunityStatus
+    reject_reason: str | None
+    reviewed_at: AwareDatetime | None
     owner: AdminOwnerOut
     subscriber_count: int
     published_events: int
     open_events: int
     created_at: AwareDatetime
+
+
+class CommunityRejectRequest(_Body):
+    reason: str | None = Field(default=None, max_length=300, description="Shown to the student")
+
+
+class CommunityReviewOut(BaseModel):
+    community: AdminCommunityOut
+    notified: int = Field(description="Owners who get the `community_approved` push (0 or 1)")
 
 
 class CommunityCreateRequest(_Body):
@@ -273,6 +337,8 @@ class AdminEventOut(BaseModel):
     state: Literal["open", "closed", "finished", "cancelled", "draft"] = Field(
         description="open: registration open; closed: deadline passed; finished: started"
     )
+    previous_starts_at: AwareDatetime | None = Field(description="v4: start before the last move")
+    cancelled_at: AwareDatetime | None
     confirmed_count: int
     waiting_count: int
     notified_count: int = Field(description="Notification rows of this event (all kinds)")
@@ -303,6 +369,14 @@ class EventUpdateRequest(_Body):
 class EventUpdateOut(BaseModel):
     event: AdminEventOut
     promoted: int = Field(description="Students moved from the waiting list by a larger limit")
+    rescheduled_notified: int = Field(
+        description="v4: registered students who get the `event_rescheduled` push (0 if not moved)"
+    )
+
+
+class EventCancelOut(BaseModel):
+    event: AdminEventOut
+    notified: int = Field(description="v4: registered students who get the `event_cancelled` push")
 
 
 class AdminRegistrationOut(BaseModel):
@@ -328,9 +402,10 @@ class NotifyOut(BaseModel):
 
 class AdminNotificationOut(BaseModel):
     notification_id: int
-    kind: Literal["event_published", "waiting_list_promoted"]
-    event_id: int
-    event_title: str
+    kind: NotificationKind
+    event_id: int | None
+    community_id: int
+    event_title: str | None
     community_name: str
     student_email: str
     student_name: str

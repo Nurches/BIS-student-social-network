@@ -34,6 +34,11 @@ class MockEventRepository
   final Set<int> _subscribed = {1, 2};
   final List<AppNotification> _inbox = [];
 
+  /// Communities student 1 asked for (Week 12), newest last.
+  final List<CommunityRequest> _requests = [];
+  static const pendingLimit = 3;
+  int _nextId = 100;
+
   @override
   Future<FeedPage> fetchFeed({int limit = 20, String? cursor}) async {
     await _delay();
@@ -43,6 +48,7 @@ class MockEventRepository
             .where(
               (e) =>
                   _subscribed.contains(e.community.id) &&
+                  !e.cancelled &&
                   now.isBefore(e.registrationDeadline),
             )
             .toList()
@@ -59,6 +65,19 @@ class MockEventRepository
   }
 
   @override
+  Future<List<Event>> fetchAnnouncements() async {
+    await _delay();
+    final now = _now();
+    return [
+      for (final e in _events.values)
+        if (!e.cancelled &&
+            (_communities[e.community.id]?.confirmed ?? false) &&
+            now.isBefore(e.registrationDeadline))
+          e.toEvent(),
+    ]..sort((a, b) => a.registrationDeadline.compareTo(b.registrationDeadline));
+  }
+
+  @override
   Future<Event> fetchEvent(int id) async {
     await _delay();
     return _find(id).toEvent();
@@ -69,6 +88,7 @@ class MockEventRepository
     await _delay();
     final event = _find(eventId);
 
+    if (event.cancelled) return const RegistrationEventCancelled();
     if (!_now().isBefore(event.registrationDeadline)) {
       return const RegistrationClosed();
     }
@@ -93,6 +113,7 @@ class MockEventRepository
     await _delay();
     final event = _find(eventId);
 
+    if (event.cancelled) return const CancelEventCancelled();
     if (event.myState == RegistrationState.none) {
       return const CancelNotRegistered();
     }
@@ -136,22 +157,29 @@ class MockEventRepository
     final now = _now();
     return [
       for (final c in _communities.values)
-        Community(
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          isConfirmed: c.confirmed,
-          subscriberCount:
-              c.otherFollowers + (_subscribed.contains(c.id) ? 1 : 0),
-          upcomingEvents: _events.values
-              .where(
-                (e) =>
-                    e.community.id == c.id &&
-                    now.isBefore(e.registrationDeadline),
-              )
-              .length,
-          isSubscribed: _subscribed.contains(c.id),
-        ),
+        // Like the server: another student's request is not listed.
+        if (c.confirmed || c.mine)
+          Community(
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            isConfirmed: c.confirmed,
+            status: c.confirmed
+                ? CommunityStatus.confirmed
+                : CommunityStatus.pending,
+            isMine: c.mine,
+            subscriberCount:
+                c.otherFollowers + (_subscribed.contains(c.id) ? 1 : 0),
+            upcomingEvents: _events.values
+                .where(
+                  (e) =>
+                      e.community.id == c.id &&
+                      !e.cancelled &&
+                      now.isBefore(e.registrationDeadline),
+                )
+                .length,
+            isSubscribed: _subscribed.contains(c.id),
+          ),
     ]..sort((a, b) => a.name.compareTo(b.name));
   }
 
@@ -161,7 +189,8 @@ class MockEventRepository
     required bool subscribed,
   }) async {
     await _delay();
-    if (!_communities.containsKey(communityId)) {
+    final community = _communities[communityId];
+    if (community == null || (subscribed && !community.confirmed)) {
       throw NotFoundException('Community $communityId not found');
     }
     subscribed ? _subscribed.add(communityId) : _subscribed.remove(communityId);
@@ -177,9 +206,54 @@ class MockEventRepository
     return [
       for (final e in _events.values)
         if (e.community.id == communityId &&
+            !e.cancelled &&
             now.isBefore(e.registrationDeadline))
           e.toEvent(),
     ]..sort((a, b) => a.registrationDeadline.compareTo(b.registrationDeadline));
+  }
+
+  @override
+  Future<CommunityRequestResult> requestCommunity({
+    required String name,
+    String? description,
+  }) async {
+    await _delay();
+    final clean = name.trim();
+    final taken = _communities.values.any(
+      (c) => c.name.toLowerCase() == clean.toLowerCase(),
+    );
+    if (taken) return const CommunityNameTaken();
+    final pending = _requests
+        .where((r) => r.status == CommunityStatus.pending)
+        .length;
+    if (pending >= pendingLimit) return const CommunityRequestLimitReached();
+
+    final id = _nextId++;
+    final request = CommunityRequest(
+      id: id,
+      name: clean,
+      description: description?.trim() ?? '',
+      status: CommunityStatus.pending,
+      createdAt: _now(),
+    );
+    _requests.add(request);
+    _communities[id] = _MockCommunity(
+      id,
+      clean,
+      request.description,
+      confirmed: false,
+      mine: true,
+    );
+    return CommunityRequestSent(request);
+  }
+
+  @override
+  Future<CommunityRequests> fetchMyRequests() async {
+    await _delay();
+    return CommunityRequests(
+      items: _requests.reversed.toList(),
+      pendingLimit: pendingLimit,
+    );
   }
 
   // ---------- NotificationRepository ----------
@@ -212,6 +286,94 @@ class MockEventRepository
     } else {
       event.waiting += 1;
     }
+  }
+
+  /// Demo and test hook: the Student Union approves request [communityId];
+  /// the student gets the `community_approved` notification.
+  void approveRequest(int communityId) {
+    final i = _requests.indexWhere((r) => r.id == communityId);
+    if (i < 0) return;
+    final r = _requests[i];
+    _requests[i] = CommunityRequest(
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      status: CommunityStatus.confirmed,
+      createdAt: r.createdAt,
+      reviewedAt: _now(),
+    );
+    _communities[r.id] = _MockCommunity(
+      r.id,
+      r.name,
+      r.description,
+      mine: true,
+    );
+    _notify(
+      NotificationKind.communityApproved,
+      communityId: r.id,
+      communityName: r.name,
+    );
+  }
+
+  /// Demo and test hook: a moderator rejects request [communityId].
+  void rejectRequest(int communityId, String? reason) {
+    final i = _requests.indexWhere((r) => r.id == communityId);
+    if (i < 0) return;
+    final r = _requests[i];
+    _requests[i] = CommunityRequest(
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      status: CommunityStatus.rejected,
+      createdAt: r.createdAt,
+      rejectReason: reason,
+      reviewedAt: _now(),
+    );
+    _communities.remove(r.id);
+  }
+
+  /// Demo and test hook: the organiser cancels event [eventId]; a
+  /// registered student gets the `event_cancelled` notification.
+  void cancelByOrganiser(int eventId) {
+    final event = _find(eventId)
+      ..cancelled = true
+      ..cancelledAt = _now();
+    if (event.myState != RegistrationState.none) {
+      _notify(NotificationKind.eventCancelled, event: event);
+    }
+  }
+
+  /// Demo and test hook: the organiser moves event [eventId] to [startsAt].
+  void rescheduleByOrganiser(int eventId, DateTime startsAt) {
+    final event = _find(eventId);
+    event
+      ..previousStartsAt = event.startsAt
+      ..startsAt = startsAt;
+    if (event.myState != RegistrationState.none) {
+      _notify(NotificationKind.eventRescheduled, event: event);
+    }
+  }
+
+  void _notify(
+    NotificationKind kind, {
+    _MockEvent? event,
+    int? communityId,
+    String? communityName,
+  }) {
+    _inbox.add(
+      AppNotification(
+        id: _nextId++,
+        kind: kind,
+        eventId: event?.id,
+        eventTitle: event?.title,
+        communityId: event?.community.id ?? communityId,
+        communityName: event?.community.name ?? communityName ?? '',
+        startsAt: event?.startsAt,
+        previousStartsAt: event?.previousStartsAt,
+        createdAt: _now(),
+        isRead: false,
+      ),
+    );
   }
 
   _MockEvent _find(int id) =>
@@ -389,12 +551,16 @@ class _MockCommunity {
     this.description, {
     this.confirmed = true,
     this.otherFollowers = 0,
+    this.mine = false,
   });
 
   final int id;
   final String name;
   final String description;
   final bool confirmed;
+
+  /// Requested by the signed-in student.
+  final bool mine;
 
   /// Followers other than the signed-in student.
   final int otherFollowers;
@@ -419,9 +585,13 @@ class _MockEvent {
   final String title;
   final String description;
   final String location;
-  final DateTime startsAt;
+  DateTime startsAt;
   final DateTime registrationDeadline;
   final int participantLimit;
+
+  bool cancelled = false;
+  DateTime? cancelledAt;
+  DateTime? previousStartsAt;
 
   int confirmed;
   int waiting;
@@ -441,5 +611,8 @@ class _MockEvent {
     freePlaces: (participantLimit - confirmed).clamp(0, participantLimit),
     myState: myState,
     waitingPosition: myPosition,
+    status: cancelled ? EventStatus.cancelled : EventStatus.published,
+    previousStartsAt: previousStartsAt,
+    cancelledAt: cancelledAt,
   );
 }

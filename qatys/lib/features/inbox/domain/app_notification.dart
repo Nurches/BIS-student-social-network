@@ -4,6 +4,15 @@ enum NotificationKind {
 
   /// A place was freed and the student moved up from the waiting list.
   waitingListPromoted,
+
+  /// Week 12: an event the student registered for is cancelled.
+  eventCancelled,
+
+  /// Week 12: an event the student registered for moved to a new time.
+  eventRescheduled,
+
+  /// Week 12: the Student Union approved the student's community request.
+  communityApproved,
 }
 
 /// One row of the in-app inbox: the same notifications the pushes were sent
@@ -17,13 +26,23 @@ class AppNotification {
     required this.communityName,
     required this.createdAt,
     required this.isRead,
+    this.communityId,
+    this.startsAt,
+    this.previousStartsAt,
   });
 
   final int id;
   final NotificationKind kind;
-  final int eventId;
-  final String eventTitle;
+
+  /// Null only for [NotificationKind.communityApproved].
+  final int? eventId;
+  final String? eventTitle;
+  final int? communityId;
   final String communityName;
+
+  /// The event start now, and before the last move.
+  final DateTime? startsAt;
+  final DateTime? previousStartsAt;
   final DateTime createdAt;
   final bool isRead;
 
@@ -32,7 +51,10 @@ class AppNotification {
     kind: kind,
     eventId: eventId,
     eventTitle: eventTitle,
+    communityId: communityId,
     communityName: communityName,
+    startsAt: startsAt,
+    previousStartsAt: previousStartsAt,
     createdAt: createdAt,
     isRead: true,
   );

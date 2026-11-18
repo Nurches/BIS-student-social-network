@@ -105,7 +105,7 @@ def test_the_readonly_role_can_read_every_table_after_a_reseed(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
         ).fetchall()
     ]
-    assert "event" in tables
+    assert "event" in tables and "faculty" in tables
     db.execute(f"SET ROLE {readonly_role}")
     for table in tables:
         db.execute(f"SELECT 1 FROM {table} LIMIT 1")  # noqa: S608 — names from pg_tables

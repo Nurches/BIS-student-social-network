@@ -139,3 +139,56 @@ rules and the fix, ran the checks on the live page and can explain every line.
    the query was weakened, the test failed.
 3. *Why fix the sample data and not the check?* — The check was right and the data was
    wrong. Changing the query to hide a finding would make the check useless.
+
+### Faculty table (Task 09 promise, W11-9)
+
+* **Problem promised in Task 09:** `student.faculty` was free text, so one faculty could be
+  stored as `SITE`, `site` and `IT faculty` — counting students per faculty would be wrong.
+* **Change** (commit `Laila: faculty table ...`, `docs/migrations/003_soft_delete_and_faculty.sql`):
+  table `faculty (faculty_id, code UNIQUE, name)` with the codes `SITE`, `BS`, `ISE`, `IT`,
+  `Student Union`; `student.faculty_id` is a foreign key instead of the text column. The API
+  still accepts a code; an unknown code answers `422 unknown_faculty` (`TODO(confirm)`). The
+  migration keeps every old value: a text that is not in the list becomes its own code.
+* **Sample data** of `docs/schema.sql`: the students now point to faculty 4 (`IT`) and the
+  Student Union staff to 5 (`Student Union`) instead of the text `Admin`.
+* **Proof:** `server/tests/test_soft_delete_and_faculty.py` — a known code is stored as a
+  reference, an unknown one is refused, the migration on a v2 database keeps `SITE` and
+  ` Physics ` and gives exactly the fresh v3 structure. All 10 data checks still pass on the
+  seed data.
+
+**Explain it yourself (faculty).** A faculty used to be typed as text, so the same faculty
+could be written in different ways and reports would split it. Now faculties live in their
+own table with a unique code, and a student points to one row; the database refuses a
+faculty that does not exist. This is normalisation: one fact stored once.
+
+*Likely question: Why a separate table and not a CHECK with a list?* — A table can be
+extended without changing the schema, holds the full name next to the code, and lets us
+join and count students per faculty.
+
+## Week 12
+
+Schema v4 (`docs/schema.sql` header, `docs/migrations/004_community_requests_and_event_changes.sql`)
+was prepared by the AI agent for her own commit (`Laila: schema v4 …`, trailer
+`Prepared-by: AI agent (session of Nurassyl Turarbek)`); she updates the ER diagram herself:
+
+* `community.status` (`pending` / `confirmed` / `rejected`), `reject_reason`, `reviewed_at`;
+  `is_confirmed` is now a generated column (`status = 'confirmed'`), so old queries still work;
+  the name is unique ignoring case among pending and confirmed (`uq_community_name`).
+* `event.previous_starts_at`, `event.cancelled_at`.
+* `notification.community_id`, `event_id` may be `NULL` (only for `community_approved`);
+  kinds `event_cancelled`, `event_rescheduled`, `community_approved`; `chk_notification_target`.
+
+### Her checks after v4 (she changes `data_checks.sql`, nobody else)
+
+Three existing checks will report false failures once the Week 12 demo has run:
+
+| Check | Why it fails on correct data | What to change |
+|---|---|---|
+| C03 no duplicate notification | `GROUP BY student_id, event_id, kind` groups two `community_approved` rows (both `event_id IS NULL`) of one student | group by `COALESCE(event_id, -community_id)` or skip `community_approved` |
+| C09 notifications point to published events | an `event_cancelled` notification points to a cancelled event by design | allow `kind = 'event_cancelled'`; skip rows with `event_id IS NULL` |
+| C10 no active registration for an unpublished event | cancelling keeps the registrations for the record | exclude `status = 'cancelled'` events, or check only drafts |
+
+New checks of the Week 12 plan: a pending community has no published event; no student has
+more than 3 pending requests; every confirmed or waiting student of a cancelled event has an
+`event_cancelled` notification. On a fresh `seed.py` all checks still pass (the server tests
+run them).

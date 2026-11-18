@@ -110,10 +110,11 @@ void main() {
   ) async {
     final app = TestApp();
     await app.pump(tester);
+    await showInFeed(tester, inFeedCard('Flutter workshop'));
     expect(find.text('1 of 20 places free'), findsOneWidget);
     app.events.inner.takePlaceByAnotherStudent(6);
 
-    await tester.tap(find.text('Flutter workshop'));
+    await tester.tap(inFeedCard('Flutter workshop'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('None — waiting list open'), findsOneWidget);

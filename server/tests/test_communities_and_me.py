@@ -29,18 +29,27 @@ def test_communities_list_counts_and_follow_state(data: Data, client: TestClient
 
     assert response.status_code == 200
     by_name = {c["name"]: c for c in response.json()}
-    assert list(by_name) == ["Debate Society", "IT Club", "Sports Club"]  # by name
+    # v4: another student's pending request is not listed.
+    assert list(by_name) == ["IT Club", "Sports Club"]  # by name
     assert by_name["IT Club"]["is_subscribed"] is True
     assert by_name["Sports Club"] | {"community_id": 0} == {
         "community_id": 0,
         "name": "Sports Club",
         "description": None,
         "is_confirmed": True,
+        "status": "confirmed",
+        "is_mine": False,
         "subscriber_count": 1,
         "upcoming_events": 1,  # the closed one does not count
         "is_subscribed": False,
     }
-    assert by_name["Debate Society"]["is_confirmed"] is False
+    owner_view = client.get("/api/v1/communities", headers=data.headers(ids["owner"])).json()
+    debate = next(c for c in owner_view if c["name"] == "Debate Society")
+    assert (debate["status"], debate["is_mine"], debate["is_confirmed"]) == (
+        "pending",
+        True,
+        False,
+    )
 
 
 def test_follow_adds_the_events_to_the_feed_and_unfollow_removes_them(

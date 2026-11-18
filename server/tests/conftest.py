@@ -95,12 +95,24 @@ class Data:
         ).fetchone()
         return row["student_id"]
 
-    def community(self, owner_id: int, *, confirmed: bool = True, name: str | None = None) -> int:
+    def community(
+        self,
+        owner_id: int,
+        *,
+        confirmed: bool = True,
+        name: str | None = None,
+        status: str | None = None,
+    ) -> int:
+        """Schema v4: `status` wins; otherwise confirmed -> 'confirmed', else 'pending'."""
         self._count += 1
         row = self.conn.execute(
-            "INSERT INTO community (name, owner_id, is_confirmed) VALUES (%s, %s, %s) "
+            "INSERT INTO community (name, owner_id, status) VALUES (%s, %s, %s) "
             "RETURNING community_id",
-            (name or f"Community {self._count}", owner_id, confirmed),
+            (
+                name or f"Community {self._count}",
+                owner_id,
+                status or ("confirmed" if confirmed else "pending"),
+            ),
         ).fetchone()
         return row["community_id"]
 

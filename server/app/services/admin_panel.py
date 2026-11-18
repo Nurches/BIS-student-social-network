@@ -4,16 +4,17 @@ Two kinds of admin, both read from the database on every request:
 
 * a **moderator** of the Student Union (`student.is_moderator`) sees and manages
   everything, creates and confirms communities (BR-01) and manages students;
-* a **community owner** sees and manages only the communities they own and
-  their events.
+* a **community owner** of a *confirmed* community sees and manages only the
+  communities they own and their events (v4: a pending request gives no access).
 
 Anyone else gets 403 `not_an_admin`. Publishing itself stays the endpoint of
 FR-01/FR-02 (`POST /communities/{id}/events`, services/events.py), so BR-01 is
 checked in one place only.
 
-The schema is not changed: there is no notification kind for a cancelled
-event, so cancelling hides the event from students without a push.
-TODO(confirm): an `event_cancelled` push needs a new `notification.kind`.
+Week 12 (schema v4): a moderator approves or rejects community requests
+(approval pushes `community_approved` to the owner); cancelling or moving an
+event pushes `event_cancelled` / `event_rescheduled` to every student who is
+confirmed or waiting.
 """
 
 from dataclasses import dataclass
@@ -47,7 +48,9 @@ def access(conn: Conn, student_id: int) -> Admin:
     row = conn.execute(
         """
         SELECT s.student_id, s.email, s.full_name, s.is_moderator,
-               EXISTS (SELECT 1 FROM community c WHERE c.owner_id = s.student_id) AS owns
+               EXISTS (SELECT 1 FROM community c
+                       WHERE c.owner_id = s.student_id AND c.status = 'confirmed'
+                         AND c.deleted_at IS NULL) AS owns
         FROM student s WHERE s.student_id = %s
         """,
         (student_id,),
@@ -75,7 +78,8 @@ _IN_SCOPE = "(%(is_moderator)s OR c.owner_id = %(me)s)"
 
 def me(conn: Conn, admin: Admin) -> dict:
     communities = conn.execute(
-        "SELECT community_id, name, is_confirmed FROM community WHERE owner_id = %s ORDER BY name",
+        "SELECT community_id, name, is_confirmed, status FROM community "
+        "WHERE owner_id = %s ORDER BY name",
         (admin.student_id,),
     ).fetchall()
     return {
@@ -95,6 +99,7 @@ def overview(conn: Conn, admin: Admin) -> dict:
         SELECT
             (SELECT COUNT(*) FROM c) AS communities,
             (SELECT COUNT(*) FROM c WHERE NOT c.is_confirmed) AS unconfirmed_communities,
+            (SELECT COUNT(*) FROM c WHERE c.status = 'pending') AS pending_requests,
             (SELECT COUNT(DISTINCT s.student_id) FROM subscription s
              JOIN c USING (community_id)) AS subscribers,
             (SELECT COUNT(*) FROM e WHERE e.status = 'published'
@@ -105,9 +110,13 @@ def overview(conn: Conn, admin: Admin) -> dict:
              WHERE r.status = 'confirmed' AND e.status = 'published') AS confirmed_registrations,
             (SELECT COUNT(*) FROM registration r JOIN e USING (event_id)
              WHERE r.status = 'waiting_list' AND e.status = 'published') AS waiting_registrations,
-            (SELECT COUNT(*) FROM notification n JOIN e USING (event_id)) AS notifications,
+            (SELECT COUNT(*) FROM notification n JOIN e USING (event_id))
+            + (SELECT COUNT(*) FROM notification n JOIN c USING (community_id))
+                AS notifications,
             (SELECT COUNT(*) FROM notification n JOIN e USING (event_id)
-             WHERE n.sent_at IS NOT NULL) AS notifications_sent
+             WHERE n.sent_at IS NOT NULL)
+            + (SELECT COUNT(*) FROM notification n JOIN c USING (community_id)
+               WHERE n.sent_at IS NOT NULL) AS notifications_sent
         """,  # noqa: S608 — only a fixed fragment is interpolated, values are bound
         _scope(admin),
     ).fetchone()
@@ -128,7 +137,8 @@ def overview(conn: Conn, admin: Admin) -> dict:
 # ---------- communities ----------
 
 _COMMUNITY_SELECT = """
-SELECT c.community_id, c.name, c.description, c.is_confirmed, c.created_at,
+SELECT c.community_id, c.name, c.description, c.is_confirmed, c.status, c.reject_reason,
+       c.reviewed_at, c.created_at,
        json_build_object('student_id', o.student_id, 'email', o.email,
                          'full_name', o.full_name) AS owner,
        (SELECT COUNT(*) FROM subscription s
@@ -143,10 +153,11 @@ JOIN student o ON o.student_id = c.owner_id
 """
 
 
-def list_communities(conn: Conn, admin: Admin) -> list[dict]:
+def list_communities(conn: Conn, admin: Admin, status: str | None = None) -> list[dict]:
     return conn.execute(
-        f"{_COMMUNITY_SELECT} WHERE {_IN_SCOPE} ORDER BY c.name",
-        _scope(admin),
+        f"{_COMMUNITY_SELECT} WHERE {_IN_SCOPE} "
+        "AND (%(status)s::text IS NULL OR c.status = %(status)s) ORDER BY c.name",
+        {**_scope(admin), "status": status},
     ).fetchall()
 
 
@@ -188,9 +199,16 @@ def create_community(
         try:
             with conn.transaction():
                 row = conn.execute(
-                    "INSERT INTO community (name, description, owner_id, is_confirmed) "
-                    "VALUES (%s, %s, %s, %s) RETURNING community_id",
-                    (name, description or None, owner_id, is_confirmed),
+                    "INSERT INTO community (name, description, owner_id, status, reviewed_at) "
+                    "VALUES (%s, %s, %s, %s, CASE WHEN %s THEN NOW() END) "
+                    "RETURNING community_id",
+                    (
+                        name,
+                        description or None,
+                        owner_id,
+                        "confirmed" if is_confirmed else "pending",
+                        is_confirmed,
+                    ),
                 ).fetchone()
         except pg_errors.UniqueViolation as exc:
             raise ApiError(409, "community_name_taken") from exc
@@ -200,19 +218,26 @@ def create_community(
         return created
 
 
-def update_community(conn: Conn, admin: Admin, community_id: int, changes: dict) -> dict:
+def update_community(
+    conn: Conn, admin: Admin, community_id: int, changes: dict
+) -> tuple[dict, list[int]]:
     """Moderator only: rename, describe, hand over to another owner, confirm or
-    withdraw the confirmation (an unconfirmed community cannot publish, BR-01)."""
+    withdraw the confirmation (an unconfirmed community cannot publish, BR-01).
+
+    Confirming a community that was not confirmed is an approval: the owner
+    gets the `community_approved` push, as with `approve_community`.
+    Returns the community and the notifications to push."""
     _require_moderator(admin)
     with conn.transaction():
-        _community(conn, community_id)
+        before = _community(conn, community_id)
         columns: dict[str, object] = {}
         if "name" in changes:
             columns["name"] = changes["name"]
         if "description" in changes:
             columns["description"] = changes["description"] or None
-        if "is_confirmed" in changes:
-            columns["is_confirmed"] = changes["is_confirmed"]
+        if "is_confirmed" in changes and changes["is_confirmed"] != before["is_confirmed"]:
+            columns["status"] = "confirmed" if changes["is_confirmed"] else "pending"
+            columns["reject_reason"] = None
         if "owner_email" in changes:
             columns["owner_id"] = _student_id_by_email(conn, changes["owner_email"])
         if columns:
@@ -225,6 +250,77 @@ def update_community(conn: Conn, admin: Admin, community_id: int, changes: dict)
                     )
             except pg_errors.UniqueViolation as exc:
                 raise ApiError(409, "community_name_taken") from exc
+        notification_ids: list[int] = []
+        if columns.get("status") == "confirmed":
+            conn.execute(
+                "UPDATE community SET reviewed_at = NOW() WHERE community_id = %s",
+                (community_id,),
+            )
+            notification_ids = _notify_approved(conn, community_id)
+        return _community(conn, community_id), notification_ids
+
+
+# ---------- community requests (Week 12) ----------
+
+
+def _notify_approved(conn: Conn, community_id: int) -> list[int]:
+    """One `community_approved` row for the owner; approving again (after a
+    withdrawal) sends it again instead of adding a second row."""
+    row = conn.execute(
+        """
+        INSERT INTO notification (student_id, community_id, kind)
+        SELECT owner_id, community_id, 'community_approved'
+        FROM community WHERE community_id = %s
+        ON CONFLICT (student_id, community_id, kind) WHERE community_id IS NOT NULL
+        DO UPDATE SET sent_at = NULL, is_read = FALSE, created_at = NOW()
+        RETURNING notification_id
+        """,
+        (community_id,),
+    ).fetchone()
+    return [row["notification_id"]] if row else []
+
+
+def _pending_request(conn: Conn, admin: Admin, community_id: int) -> dict:
+    """The locked request row, if this moderator may review it."""
+    _require_moderator(admin)
+    row = conn.execute(
+        "SELECT community_id, owner_id, status FROM community "
+        "WHERE community_id = %s AND deleted_at IS NULL FOR UPDATE",
+        (community_id,),
+    ).fetchone()
+    if row is None:
+        raise ApiError(404, "community_not_found")
+    if row["owner_id"] == admin.student_id:
+        # Akbota's threat "self-approval": a moderator's own request needs another moderator.
+        raise ApiError(403, "cannot_review_own_request")
+    if row["status"] != "pending":
+        raise ApiError(409, "community_not_pending")
+    return row
+
+
+def approve_community(conn: Conn, admin: Admin, community_id: int) -> tuple[dict, list[int]]:
+    """pending -> confirmed: the owner may publish now and gets a push."""
+    with conn.transaction():
+        _pending_request(conn, admin, community_id)
+        conn.execute(
+            "UPDATE community SET status = 'confirmed', reviewed_at = NOW(), "
+            "reject_reason = NULL WHERE community_id = %s",
+            (community_id,),
+        )
+        notification_ids = _notify_approved(conn, community_id)
+        return _community(conn, community_id), notification_ids
+
+
+def reject_community(conn: Conn, admin: Admin, community_id: int, reason: str | None) -> dict:
+    """pending -> rejected, with an optional reason the student sees in the
+    app. No push (Week 12 plan). The name becomes free again."""
+    with conn.transaction():
+        _pending_request(conn, admin, community_id)
+        conn.execute(
+            "UPDATE community SET status = 'rejected', reviewed_at = NOW(), "
+            "reject_reason = %s WHERE community_id = %s",
+            (reason or None, community_id),
+        )
         return _community(conn, community_id)
 
 
@@ -233,7 +329,7 @@ def update_community(conn: Conn, admin: Admin, community_id: int, changes: dict)
 _EVENT_SELECT = """
 SELECT e.event_id, e.community_id, c.name AS community_name, e.title, e.description,
        e.location, e.starts_at, e.registration_deadline, e.participant_limit, e.status,
-       e.created_at,
+       e.created_at, e.previous_starts_at, e.cancelled_at,
        CASE
            WHEN e.status <> 'published' THEN e.status
            WHEN e.starts_at <= NOW() THEN 'finished'
@@ -302,13 +398,39 @@ _EDITABLE_EVENT_FIELDS = (
 )
 
 
-def update_event(conn: Conn, admin: Admin, event_id: int, changes: dict) -> tuple[dict, list[int]]:
-    """Edits a published event. Returns it and the notifications to push.
+def _notify_registered(conn: Conn, event_id: int, kind: str) -> list[int]:
+    """One `kind` row for every student confirmed or waiting. A second move
+    re-sends the same row (sent_at = NULL), so nobody gets two rows."""
+    rows = conn.execute(
+        """
+        INSERT INTO notification (student_id, event_id, kind)
+        SELECT r.student_id, r.event_id, %s
+        FROM registration r
+        JOIN student s ON s.student_id = r.student_id AND s.deleted_at IS NULL
+        WHERE r.event_id = %s AND r.status IN ('confirmed', 'waiting_list')
+        ON CONFLICT (student_id, event_id, kind)
+        DO UPDATE SET sent_at = NULL, is_read = FALSE, created_at = NOW()
+        RETURNING notification_id
+        """,
+        (kind, event_id),
+    ).fetchall()
+    return [r["notification_id"] for r in rows]
+
+
+def update_event(
+    conn: Conn, admin: Admin, event_id: int, changes: dict
+) -> tuple[dict, list[int], int]:
+    """Edits a published event. Returns it, the notifications to push and how
+    many registered students were told about a new start time.
 
     FR-02 holds for a moved deadline: it must be in the future and not after
     the start. A limit below the confirmed count is refused (nobody loses a
     place); a larger limit moves students up from the waiting list in queue
     order, each with a `waiting_list_promoted` push, as a cancellation does.
+
+    v4: a new `starts_at` is a reschedule. It must be in the future; the old
+    start is kept in `previous_starts_at`, and every confirmed or waiting
+    student gets the `event_rescheduled` push.
     """
     with conn.transaction():
         event = _managed_event(conn, admin, event_id, lock=True)
@@ -320,6 +442,9 @@ def update_event(conn: Conn, admin: Admin, event_id: int, changes: dict) -> tupl
         limit = changes.get("participant_limit", event["participant_limit"])
         if deadline != event["registration_deadline"] and deadline <= datetime.now(UTC):
             raise ApiError(422, "deadline_in_the_past")
+        moved = starts_at != event["starts_at"]
+        if moved and starts_at <= datetime.now(UTC):
+            raise ApiError(422, "start_in_the_past")
         if deadline > starts_at:
             raise ApiError(422, "deadline_after_event_start")
 
@@ -332,6 +457,10 @@ def update_event(conn: Conn, admin: Admin, event_id: int, changes: dict) -> tupl
             raise ApiError(409, "limit_below_confirmed")
 
         columns = {name: changes[name] for name in _EDITABLE_EVENT_FIELDS if name in changes}
+        if not moved:
+            columns.pop("starts_at", None)
+        else:
+            columns["previous_starts_at"] = event["starts_at"]
         if columns:
             assignments = ", ".join(f"{column} = %s" for column in columns)
             conn.execute(
@@ -369,18 +498,32 @@ def update_event(conn: Conn, admin: Admin, event_id: int, changes: dict) -> tupl
                 ).fetchone()
                 assert row is not None
                 notification_ids.append(row["notification_id"])
-        return _event(conn, event_id), notification_ids
+        rescheduled: list[int] = []
+        if moved:
+            rescheduled = _notify_registered(conn, event_id, "event_rescheduled")
+        return _event(conn, event_id), notification_ids + rescheduled, len(rescheduled)
 
 
-def cancel_event(conn: Conn, admin: Admin, event_id: int) -> dict:
-    """Hides the event from the feed, the event page, "My events" and the
-    inbox. Registrations are kept as they were, for the record."""
+def cancel_event(conn: Conn, admin: Admin, event_id: int) -> tuple[dict, list[int]]:
+    """Removes the event from the feed and the announcements. Registrations
+    are kept as they were, for the record; v4: every confirmed or waiting
+    student gets the `event_cancelled` push, and the event page and "My
+    events" show it as cancelled. An event that has started cannot be
+    cancelled (410 `event_started`)."""
     with conn.transaction():
         event = _managed_event(conn, admin, event_id, lock=True)
         if event["status"] == "cancelled":
             raise ApiError(409, "event_cancelled")
-        conn.execute("UPDATE event SET status = 'cancelled' WHERE event_id = %s", (event_id,))
-        return _event(conn, event_id)
+        if event["status"] == "published" and event["starts_at"] <= datetime.now(UTC):
+            raise ApiError(410, "event_started")
+        conn.execute(
+            "UPDATE event SET status = 'cancelled', cancelled_at = NOW() WHERE event_id = %s",
+            (event_id,),
+        )
+        notification_ids: list[int] = []
+        if event["status"] == "published":
+            notification_ids = _notify_registered(conn, event_id, "event_cancelled")
+        return _event(conn, event_id), notification_ids
 
 
 def notify_again(conn: Conn, admin: Admin, event_id: int) -> tuple[int, list[int]]:
@@ -396,7 +539,7 @@ def notify_again(conn: Conn, admin: Admin, event_id: int) -> tuple[int, list[int
         unsent = conn.execute(
             "SELECT notification_id FROM notification WHERE event_id = %s AND sent_at IS NULL",
             (event_id,),
-        ).fetchall()
+        ).fetchall()  # every kind: a reschedule push that did not arrive is sent again
     return len(new), sorted({r["notification_id"] for r in unsent})
 
 
@@ -428,16 +571,16 @@ def notifications(conn: Conn, admin: Admin, event_id: int | None) -> dict:
     """The delivery log: newest first, `sent_at` empty until FCM accepts."""
     rows = conn.execute(
         f"""
-        SELECT n.notification_id, n.kind, n.event_id, e.title AS event_title,
-               c.name AS community_name, s.email AS student_email,
-               s.full_name AS student_name,
+        SELECT n.notification_id, n.kind, n.event_id, c.community_id,
+               e.title AS event_title, c.name AS community_name,
+               s.email AS student_email, s.full_name AS student_name,
                (SELECT COUNT(*) FROM device_token d
                 WHERE d.student_id = n.student_id) AS devices,
                n.created_at, n.sent_at, n.is_read
         FROM notification n
-        JOIN event e     ON e.event_id = n.event_id
-        JOIN community c ON c.community_id = e.community_id
-        JOIN student s   ON s.student_id = n.student_id
+        LEFT JOIN event e ON e.event_id = n.event_id
+        JOIN community c  ON c.community_id = COALESCE(e.community_id, n.community_id)
+        JOIN student s    ON s.student_id = n.student_id
         WHERE {_IN_SCOPE}
           AND (%(event_id)s::integer IS NULL OR n.event_id = %(event_id)s)
         ORDER BY n.created_at DESC, n.notification_id DESC
