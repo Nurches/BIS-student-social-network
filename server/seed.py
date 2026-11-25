@@ -7,14 +7,17 @@ DELETES EVERY TABLE first, with every registration, notification and phone push
 token in it. Dates are relative to now, so the demo never goes stale: re-run it
 on the morning of the defence (docs/demo-runbook.md says when and how).
 
-Demo data: 10 students, 5 communities, 8 events, 1 confirmed admin
+Demo data: 10 students, 5 communities, 10 events, 1 confirmed admin
 (union@kbtu.kz, owner of IT Club, Career Center, Sports Club, Volunteer Hub).
+Week 13 (schema v5): two events that already took place, with check-ins and
+ratings, so /admin -> Analytics has numbers; three open events have a poster.
 The team's demo accounts follow IT Club and Career Center only, so the other
 communities are there to be discovered in the app's Explore tab. Every account uses the
 password from SEED_PASSWORD (default: qatys2026, the same as the app's mock mode).
 """
 
 import argparse
+import io
 import os
 import sys
 from collections.abc import Callable
@@ -22,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import psycopg
+from PIL import Image, ImageDraw, ImageFont
 from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict
 from psycopg.rows import dict_row
@@ -29,6 +33,7 @@ from psycopg.rows import dict_row
 from app.config import get_settings
 from app.db import apply_schema
 from app.security import hash_password
+from app.services import posters
 
 ALMATY = ZoneInfo("Asia/Almaty")
 
@@ -86,6 +91,7 @@ def events() -> list[dict]:
             confirmed=3,
             waiting=0,
             status="published",
+            poster=("#1d4ed8", "#7c3aed"),
         ),
         dict(
             community="Career Center",
@@ -98,6 +104,7 @@ def events() -> list[dict]:
             confirmed=1,
             waiting=0,
             status="published",
+            poster=("#0f766e", "#0b3d91"),
         ),
         # One place left: the race on the last place (brief §9).
         dict(
@@ -149,6 +156,7 @@ def events() -> list[dict]:
             confirmed=4,
             waiting=0,
             status="published",
+            poster=("#ea580c", "#be123c"),
         ),
         dict(
             community="Volunteer Hub",
@@ -174,7 +182,68 @@ def events() -> list[dict]:
             waiting=0,
             status="draft",
         ),
+        # Week 13: events that took place. `attended` of the confirmed were
+        # checked in at the door; `ratings` are theirs, in the same order.
+        dict(
+            community="IT Club",
+            title="Python meetup",
+            description="Lightning talks about Python in production.",
+            location="Block C, room 301",
+            starts_at=at(-6, 18),
+            ends_at=at(-6, 20),
+            deadline=at(-7, 18),
+            limit=30,
+            confirmed=5,
+            waiting=0,
+            status="published",
+            attended=4,
+            ratings=[
+                (5, "Great talks, more of these please"),
+                (4, "Good, but the room was crowded"),
+                (4, None),
+            ],
+        ),
+        dict(
+            community="Career Center",
+            title="LinkedIn profile workshop",
+            description="Recruiters review your profile live.",
+            location="Block B, room 210",
+            starts_at=at(-3, 15),
+            deadline=at(-4, 18),
+            limit=20,
+            confirmed=3,
+            waiting=0,
+            status="published",
+            attended=3,
+            ratings=[(5, "Very practical"), (3, "Too short")],
+        ),
     ]
+
+
+def poster_image(title: str, colors: tuple[str, str]) -> posters.Poster:
+    """A simple 16:9 poster for the demo: a gradient and the title."""
+    width, height = 1600, 900
+    top, bottom = (Image.new("RGB", (1, 1), c).getpixel((0, 0)) for c in colors)
+    image = Image.new("RGB", (width, height))
+    draw = ImageDraw.Draw(image)
+    for x in range(width):
+        t = x / (width - 1)
+        color = tuple(round(a + (b - a) * t) for a, b in zip(top, bottom, strict=True))
+        draw.line([(x, 0), (x, height)], fill=color)
+    for i in range(6):  # decoration: soft circles
+        r = 120 + 60 * i
+        draw.ellipse(
+            [width - 150 - r, 150 - r, width - 150 + r, 150 + r],
+            outline=(255, 255, 255),
+            width=3,
+        )
+    font = ImageFont.load_default(size=110)
+    small = ImageFont.load_default(size=44)
+    draw.text((90, 90), "QATYS / KBTU", font=small, fill=(255, 255, 255))
+    draw.multiline_text((90, 560), title, font=font, fill=(255, 255, 255), spacing=12)
+    out = io.BytesIO()
+    image.save(out, "JPEG", quality=88)
+    return posters.process(out.getvalue())
 
 
 def seed(conn: psycopg.Connection, password: str, rounds: int) -> None:
@@ -221,8 +290,9 @@ def seed(conn: psycopg.Connection, password: str, rounds: int) -> None:
         for event in events():
             row = conn.execute(
                 "INSERT INTO event (community_id, title, description, location, starts_at, "
-                "registration_deadline, participant_limit, status, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW() - INTERVAL '2 days') "
+                "registration_deadline, participant_limit, status, created_at, ends_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, "
+                "LEAST(NOW(), %s) - INTERVAL '2 days', %s) "
                 "RETURNING event_id",
                 (
                     communities[event["community"]],
@@ -233,23 +303,67 @@ def seed(conn: psycopg.Connection, password: str, rounds: int) -> None:
                     event["deadline"],
                     event["limit"],
                     event["status"],
+                    event["deadline"],
+                    event.get("ends_at"),
                 ),
             ).fetchone()
             event_id = row["event_id"]
+            past = event["starts_at"] <= datetime.now(UTC)
 
             queue = [("confirmed", s) for s in others[: event["confirmed"]]] + [
                 ("waiting_list", s)
                 for s in others[event["confirmed"] : event["confirmed"] + event["waiting"]]
             ]
             for i, (status, student_id) in enumerate(queue):
+                registered_at = (
+                    event["deadline"] - timedelta(hours=30 - i)
+                    if past
+                    else datetime.now(UTC) - timedelta(hours=30 - i)
+                )
+                checked_in = status == "confirmed" and i < event.get("attended", 0)
                 conn.execute(
                     "INSERT INTO registration (student_id, event_id, status, created_at, "
-                    "updated_at) VALUES (%s, %s, %s, NOW() - %s * INTERVAL '1 hour', "
-                    "NOW() - %s * INTERVAL '1 hour')",
-                    (student_id, event_id, status, 30 - i, 30 - i),
+                    "updated_at, checked_in_at, checked_in_by) VALUES (%s, %s, %s, %s, %s, "
+                    "%s, %s)",
+                    (
+                        student_id,
+                        event_id,
+                        status,
+                        registered_at,
+                        registered_at,
+                        event["starts_at"] - timedelta(minutes=10 - i) if checked_in else None,
+                        ids[ADMIN_EMAIL] if checked_in else None,
+                    ),
+                )
+            for i, (rating, comment) in enumerate(event.get("ratings", [])):
+                conn.execute(
+                    "INSERT INTO event_feedback (event_id, student_id, rating, comment, "
+                    "created_at) VALUES (%s, %s, %s, %s, %s)",
+                    (
+                        event_id,
+                        queue[i][1],
+                        rating,
+                        comment,
+                        event["starts_at"] + timedelta(hours=3, minutes=i * 7),
+                    ),
+                )
+            if "poster" in event:
+                poster = poster_image(event["title"], event["poster"])
+                conn.execute(
+                    "INSERT INTO event_poster (event_id, mime, size_bytes, width, height, data, "
+                    "uploaded_by) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        event_id,
+                        poster.mime,
+                        len(poster.data),
+                        poster.width,
+                        poster.height,
+                        poster.data,
+                        ids[ADMIN_EMAIL],
+                    ),
                 )
 
-            if event["status"] == "published":
+            if event["status"] == "published" and not past:
                 conn.execute(
                     "INSERT INTO notification (student_id, event_id, created_at, sent_at, is_read) "
                     "SELECT s.student_id, %s, NOW() - INTERVAL '2 days', "

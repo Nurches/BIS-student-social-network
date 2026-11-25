@@ -18,9 +18,14 @@
 -- community.status (pending / confirmed / rejected) for requests by any student,
 -- event.previous_starts_at and event.cancelled_at, and three notification kinds:
 -- community_approved, event_cancelled, event_rescheduled.
+--
+-- v5 (2026-11-23, Week 13): docs/migrations/005_checkin_feedback_posters.sql —
+-- registration.checked_in_at / checked_in_by (QR check-in), event.ends_at,
+-- event_feedback (rating 1–5, one per student and event) and event_poster
+-- (one image per event, JPEG / PNG / WebP up to 2 MB).
 -- ============================================================
 
-DROP TABLE IF EXISTS device_token, notification, registration, event, subscription, community, student, faculty CASCADE;
+DROP TABLE IF EXISTS event_poster, event_feedback, device_token, notification, registration, event, subscription, community, student, faculty CASCADE;
 
 -- ---------- Tables ----------
 
@@ -88,8 +93,12 @@ CREATE TABLE event (
     deleted_at            TIMESTAMPTZ,                 -- soft delete
     previous_starts_at    TIMESTAMPTZ,                 -- v4: the start before the last reschedule
     cancelled_at          TIMESTAMPTZ,                 -- v4: when the event was cancelled
+    -- v5 (Week 13): when the event ends; NULL = two hours after the start.
+    -- Feedback opens at the end (FR-07); "Finish now" in /admin sets it.
+    ends_at               TIMESTAMPTZ,
     CONSTRAINT chk_event_status CHECK (status IN ('draft', 'published', 'cancelled')),
-    CONSTRAINT chk_deadline_before_start CHECK (registration_deadline <= starts_at)
+    CONSTRAINT chk_deadline_before_start CHECK (registration_deadline <= starts_at),
+    CONSTRAINT chk_end_after_start CHECK (ends_at IS NULL OR ends_at > starts_at)
     -- FR-02 (the deadline must still be in the future at the moment of publication)
     -- is checked by the application: a CHECK constraint cannot compare with the current time.
 );
@@ -101,6 +110,10 @@ CREATE TABLE registration (
     status          VARCHAR(20) NOT NULL DEFAULT 'confirmed',   -- FR-03
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),         -- when the current status began
+    -- v5 (Week 13, FR-06): the organiser scanned the ticket at the door. Only a
+    -- confirmed registration is checked in, once (application rule, data check C14).
+    checked_in_at   TIMESTAMPTZ,
+    checked_in_by   INTEGER     REFERENCES student(student_id) ON DELETE RESTRICT,
     -- One row per student and event. Cancelling sets status = 'cancelled';
     -- registering again UPDATEs this row (and updated_at), never INSERTs a second one.
     CONSTRAINT uq_registration UNIQUE (student_id, event_id),
@@ -137,6 +150,36 @@ CREATE TABLE device_token (
     CONSTRAINT chk_device_platform CHECK (platform IN ('android', 'ios', 'web'))
 );
 
+-- v5 (Week 13, FR-07): one rating per student and event, from a student who was
+-- checked in, after the event ended (application rules, data check C15).
+CREATE TABLE event_feedback (
+    feedback_id SERIAL PRIMARY KEY,
+    event_id    INTEGER      NOT NULL REFERENCES event(event_id) ON DELETE RESTRICT,
+    student_id  INTEGER      NOT NULL REFERENCES student(student_id) ON DELETE RESTRICT,
+    rating      SMALLINT     NOT NULL,
+    comment     VARCHAR(500),
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_feedback UNIQUE (event_id, student_id),
+    CONSTRAINT chk_feedback_rating CHECK (rating BETWEEN 1 AND 5)
+);
+
+-- v5 (Week 13, FR-08): at most one poster per event, uploaded in /admin by the
+-- community owner or a moderator. Kept in the database: the free Render disk is
+-- wiped on every deploy. The server re-encodes every upload (no EXIF / GPS).
+CREATE TABLE event_poster (
+    event_id    INTEGER      PRIMARY KEY REFERENCES event(event_id) ON DELETE CASCADE,
+    mime        VARCHAR(20)  NOT NULL,
+    size_bytes  INTEGER      NOT NULL,
+    width       INTEGER      NOT NULL CHECK (width > 0),
+    height      INTEGER      NOT NULL CHECK (height > 0),
+    data        BYTEA        NOT NULL,                  -- the re-encoded image
+    uploaded_by INTEGER      NOT NULL REFERENCES student(student_id) ON DELETE RESTRICT,
+    uploaded_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_poster_mime CHECK (mime IN ('image/jpeg', 'image/png', 'image/webp')),
+    CONSTRAINT chk_poster_size CHECK (size_bytes > 0 AND size_bytes <= 2097152),  -- 2 MB
+    CONSTRAINT chk_poster_size_matches CHECK (octet_length(data) = size_bytes)
+);
+
 -- ---------- Indexes (feed performance, NFR-01) ----------
 CREATE INDEX idx_event_feed          ON event (status, registration_deadline, event_id);
 CREATE INDEX idx_subscription_student ON subscription (student_id);
@@ -149,6 +192,9 @@ CREATE UNIQUE INDEX uq_community_name ON community (LOWER(name)) WHERE status <>
 CREATE INDEX idx_community_owner_status ON community (owner_id, status);
 CREATE UNIQUE INDEX uq_notification_community
     ON notification (student_id, community_id, kind) WHERE community_id IS NOT NULL;
+-- v5: analytics count check-ins and ratings per event.
+CREATE INDEX idx_registration_checked_in ON registration (event_id) WHERE checked_in_at IS NOT NULL;
+CREATE INDEX idx_feedback_event ON event_feedback (event_id);
 
 -- ---------- Reference data ----------
 -- Faculty codes the API accepts (POST /auth/register "faculty"); any other code is

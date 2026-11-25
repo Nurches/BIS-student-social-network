@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Bodies larger than this are rejected with 413 before they are parsed.
     max_body_bytes: int = 64 * 1024
 
+    # v5 (FR-08): the one route that takes an image, PUT /admin/events/{id}/poster.
+    max_poster_bytes: int = 2 * 1024 * 1024
+
     # Firebase service account key: the JSON itself, not a path, so it can live
     # in one Render environment variable. Empty = pushes are logged, not sent.
     fcm_service_account_json: str = ""

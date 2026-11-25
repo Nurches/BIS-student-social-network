@@ -67,6 +67,34 @@ Demo chain of Week 12 (both features as one story, about 3 minutes):
 4. Owner moves the event (Edit → new start) → phone B gets "Event moved", the page says *Moved*.
 5. Owner cancels it → phone B gets "Event cancelled"; the page and My events say *Cancelled*.
 
+### Week 13: schema v5 (posters, check-in, feedback, analytics)
+
+The live database is v4. The Week 13 code needs v5 (new tables `event_feedback`,
+`event_poster`, columns `registration.checked_in_at`, `event.ends_at`). Old code runs on v5
+without errors, new code does not run on v4. So: **commit, reseed, push** — the same order:
+
+1. Members' live runs on the old build are finished.
+2. Commit Week 13, **do not push**. Reseed (section 2): the database becomes v5, with two
+   past events (Python meetup, LinkedIn profile workshop) that have check-ins and ratings
+   (so `/admin` → **Analytics** is not empty) and posters on three open events.
+3. **Push at once**; Render redeploys in 3–5 minutes (`requirements.txt` adds Pillow).
+4. New TestFlight build (`qatys/tool/build_ios_release.sh`): only it shows posters, the ticket
+   and the rating form. The old build keeps working on v5.
+
+Without a reseed: `psql "$DATABASE_URL" -f docs/migrations/005_checkin_feedback_posters.sql`.
+
+Demo chain of Week 13 (the whole event cycle, about 4 minutes):
+
+1. `/admin` as the owner → **Publish event**: deadline in **2 minutes**, start in **3 minutes**
+   (the door opens 3 hours before the start, so check-in works at once).
+2. On its card → **Add poster** → choose a JPEG → it appears in the carousel and the feed
+   (pull to refresh on the phone).
+3. Phone: open the event → **Register** → **Ticket** (QR + code).
+4. `/admin` → **Check-in** → scan the QR with the laptop camera (Chrome) or type the code →
+   ✓ name. Scan it again → "Already used" (a reused screenshot is refused).
+5. After the start: card → **Finish now** → phone: **Rate this event** → 5 stars + comment.
+6. `/admin` → **Analytics**: registered vs attended, no-show %, average rating; **Feedback**.
+
 ## 2. Reseed, step by step (about 15 minutes)
 
 ```bash
@@ -82,7 +110,7 @@ export JWT_SECRET=not-used-by-seed-but-required-32chars
 python seed.py --yes --live
 #   Target: database 'neondb' on host 'ep-….neon.tech'
 #   Type the database name 'neondb' to delete every table in it: neondb
-#   Seeded 10 students, 5 communities, 8 events. Admin: union@kbtu.kz
+#   Seeded 10 students, 5 communities, 10 events. Admin: union@kbtu.kz
 #   Read-only role qatys_readonly: SELECT granted again   (or: not present)
 unset DATABASE_URL DATABASE_URL_READONLY
 ```

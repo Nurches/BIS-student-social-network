@@ -121,6 +121,12 @@ def test_event_object_matches_the_contract(data: Data) -> None:
         "status",
         "previous_starts_at",
         "cancelled_at",
+        # v5 (Week 13)
+        "ends_at",
+        "poster_url",
+        "checked_in_at",
+        "my_rating",
+        "feedback_open",
     }
     assert item["community_name"] == "IT Club"
     assert item["free_places"] == 0

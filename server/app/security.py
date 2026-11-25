@@ -131,6 +131,7 @@ class RateLimiter:
 
 login_rate_limiter = RateLimiter()
 data_checks_rate_limiter = RateLimiter()
+check_in_rate_limiter = RateLimiter()  # v5: per organiser, against guessing ticket codes
 
 
 def client_ip(request: Request) -> str:

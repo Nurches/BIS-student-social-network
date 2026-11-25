@@ -13,8 +13,6 @@ from pathlib import Path
 import psycopg
 from fastapi.testclient import TestClient
 
-from app.db import SCHEMA_SQL
-
 from .conftest import Data, FakePushSender
 from .test_schema_and_seed import _load, _structure
 
@@ -22,6 +20,8 @@ A = "/api/v1/admin"
 ROOT = Path(__file__).parents[2]
 MIGRATION_004 = ROOT / "docs" / "migrations" / "004_community_requests_and_event_changes.sql"
 SCHEMA_V3 = Path(__file__).with_name("fixtures") / "schema_v3.sql"
+# Week 13 moved the live schema to v5: migration 004 must give exactly v4.
+SCHEMA_V4 = Path(__file__).with_name("fixtures") / "schema_v4.sql"
 
 
 def moderator(data: Data, email: str = "union@kbtu.kz") -> int:
@@ -359,7 +359,7 @@ def test_announcements_show_open_events_of_every_confirmed_community(
 
 def test_migration_004_on_a_v3_database_equals_a_fresh_schema(db: psycopg.Connection) -> None:
     _load(db, "migrated", SCHEMA_V3.read_text(encoding="utf-8"))
-    _load(db, "fresh", SCHEMA_SQL.read_text(encoding="utf-8"))
+    _load(db, "fresh", SCHEMA_V4.read_text(encoding="utf-8"))
     try:
         db.execute("SET search_path TO migrated")
         db.execute(

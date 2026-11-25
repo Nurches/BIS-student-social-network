@@ -308,7 +308,9 @@ def test_an_injected_violation_fails_exactly_its_check(
         seeded.execute(statement)
     results = run(seeded)
 
-    assert not_passing(results) == {check_id}
+    # C11 reads community.status and catches the same published-but-unconfirmed row as C05.
+    expected = {check_id, "C11"} if check_id == "C05" else {check_id}
+    assert not_passing(results) == expected
     assert results[check_id]["status"] == "fail"
     assert results[check_id]["row_count"] == 1
     if expected_value is not None:

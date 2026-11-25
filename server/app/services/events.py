@@ -9,7 +9,8 @@ from ..errors import ApiError
 
 # Server-computed fields of the Event object, for the rows of a CTE named
 # `page` (one SQL statement for the whole page, no query per event — NFR-01).
-# `mine` is the caller's own active registration.
+# `mine` is the caller's own active registration. v5: the caller's check-in,
+# rating and whether the feedback form is open (checked in, ended, not rated).
 _EVENT_SELECT = """
 SELECT p.event_id, p.community_id, p.community_name, p.title, p.description, p.location,
        p.starts_at, p.registration_deadline, p.participant_limit,
@@ -23,19 +24,39 @@ SELECT p.event_id, p.community_id, p.community_name, p.title, p.description, p.l
            WHERE w.event_id = p.event_id AND w.status = 'waiting_list'
              AND (w.updated_at, w.registration_id) <= (mine.updated_at, mine.registration_id)
        ) END AS waiting_position,
-       p.status, p.previous_starts_at, p.cancelled_at
+       p.status, p.previous_starts_at, p.cancelled_at,
+       p.ends_at, p.poster_url,
+       mine.checked_in_at,
+       fb.rating AS my_rating,
+       (mine.checked_in_at IS NOT NULL AND p.status = 'published'
+        AND p.ends_at <= NOW() AND fb.rating IS NULL) AS feedback_open
 FROM page p
 LEFT JOIN registration mine
        ON mine.event_id = p.event_id
       AND mine.student_id = %(student_id)s
       AND mine.status <> 'cancelled'
+LEFT JOIN event_feedback fb
+       ON fb.event_id = p.event_id
+      AND fb.student_id = %(student_id)s
 ORDER BY p.registration_deadline, p.event_id
 """
 
-_PAGE_COLUMNS = """
+# v5: an event without its own end lasts two hours (FR-07 opens feedback at the
+# end). One definition for every query on an event aliased `e`.
+EVENT_END_SQL = "COALESCE(e.ends_at, e.starts_at + INTERVAL '2 hours')"
+
+# v5 (FR-08): the public address of the event's poster, or NULL. `v` changes
+# when the poster is replaced, so a phone never shows a stale cached image.
+POSTER_URL_SQL = """(SELECT '/api/v1/events/' || ep.event_id || '/poster?v='
+        || FLOOR(EXTRACT(EPOCH FROM ep.uploaded_at) * 1000)::bigint
+ FROM event_poster ep WHERE ep.event_id = e.event_id)"""
+
+_PAGE_COLUMNS = f"""
 e.event_id, e.community_id, c.name AS community_name, e.title, e.description, e.location,
 e.starts_at, e.registration_deadline, e.participant_limit,
-e.status, e.previous_starts_at, e.cancelled_at
+e.status, e.previous_starts_at, e.cancelled_at,
+{EVENT_END_SQL} AS ends_at,
+{POSTER_URL_SQL} AS poster_url
 """
 
 ANNOUNCEMENTS_LIMIT = 10
@@ -250,12 +271,15 @@ def cancel(conn: Conn, student_id: int, event_id: int) -> int | None:
     with conn.transaction():
         event = _lock_published_event(conn, event_id)
         mine = conn.execute(
-            "SELECT registration_id, status FROM registration "
+            "SELECT registration_id, status, checked_in_at FROM registration "
             "WHERE event_id = %s AND student_id = %s AND status <> 'cancelled'",
             (event_id, student_id),
         ).fetchone()
         if mine is None:
             raise ApiError(404, "not_registered")
+        if mine["checked_in_at"] is not None:
+            # v5: the student is already at the event; the place is used.
+            raise ApiError(409, "already_checked_in")
         if event["starts_at"] <= datetime.now(UTC):
             # TODO(confirm): default chosen in M0, not yet confirmed by the team.
             raise ApiError(410, "event_started")
@@ -315,6 +339,7 @@ def publish(
     starts_at: datetime,
     registration_deadline: datetime,
     participant_limit: int,
+    ends_at: datetime | None = None,
 ) -> tuple[int, list[int]]:
     """Returns the new event id and the ids of the notifications to push."""
     with conn.transaction():
@@ -331,12 +356,14 @@ def publish(
             raise ApiError(422, "deadline_in_the_past")
         if registration_deadline > starts_at:
             raise ApiError(422, "deadline_after_event_start")
+        if ends_at is not None and ends_at <= starts_at:
+            raise ApiError(422, "end_before_start")
 
         row = conn.execute(
             """
             INSERT INTO event (community_id, title, description, location, starts_at,
-                               registration_deadline, participant_limit, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, 'published')
+                               registration_deadline, participant_limit, status, ends_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 'published', %s)
             RETURNING event_id
             """,
             (
@@ -347,6 +374,7 @@ def publish(
                 starts_at,
                 registration_deadline,
                 participant_limit,
+                ends_at,
             ),
         ).fetchone()
         assert row is not None

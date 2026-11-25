@@ -72,7 +72,7 @@ def test_seed_builds_a_demo_where_the_team_starts_unregistered(
 
     assert db.execute("SELECT COUNT(*) AS n FROM student").fetchone()["n"] == 10
     assert db.execute("SELECT COUNT(*) AS n FROM community").fetchone()["n"] == 5
-    assert db.execute("SELECT COUNT(*) AS n FROM event").fetchone()["n"] == 8
+    assert db.execute("SELECT COUNT(*) AS n FROM event").fetchone()["n"] == 10
 
     login = client.post(
         "/api/v1/auth/login", json={"email": "nurassyl@kbtu.kz", "password": "qatys2026"}

@@ -1,4 +1,4 @@
-# API v0.2 (+ Week 12, schema v4)
+# API v0.2 (+ Week 13, schema v5)
 
 Base URL `/api/v1` · JSON only · every endpoint except `/health` and `/auth/*` requires
 `Authorization: Bearer <token>`.
@@ -27,6 +27,13 @@ confirmed or waiting student; the Event object gains `status`, `previous_starts_
 `cancelled_at`; a cancelled event stays readable; **announcement cards** for the home screen
 (`GET /events/announcements`). A client older than this version cannot read an inbox with a
 `community_approved` row (`event_id` is `null` there): ship the new app build with it.
+
+**Week 13 (2026-11-23), schema v5** (`docs/migrations/005_checkin_feedback_posters.sql`):
+**posters** (the owner uploads one image per event in `/admin`, the app shows it),
+**QR check-in** (`GET /events/{id}/ticket`, the organiser checks in at the door in `/admin`),
+**feedback** after the event (`POST /events/{id}/feedback`, only checked-in students, once)
+and **attendance analytics** in `/admin`. The Event object gains `ends_at`, `poster_url`,
+`checked_in_at`, `my_rating`, `feedback_open`; older clients ignore them.
 
 ## Conventions
 
@@ -179,7 +186,12 @@ Used by the feed and by `GET /events/{id}`.
   "waiting_position": 3,
   "status": "published",
   "previous_starts_at": "2026-11-19T10:00:00+05:00",
-  "cancelled_at": null
+  "cancelled_at": null,
+  "ends_at": "2026-11-20T12:00:00+05:00",
+  "poster_url": "/api/v1/events/17/poster?v=1763820000000",
+  "checked_in_at": null,
+  "my_rating": null,
+  "feedback_open": false
 }
 ```
 
@@ -192,6 +204,11 @@ Used by the feed and by `GET /events/{id}`.
 | `status` | v4: `"published"` or `"cancelled"` (a cancelled event is shown only by `GET /events/{id}` and `GET /me/registrations`) |
 | `previous_starts_at` | v4: the start before the organiser last moved the event; `null` if never moved |
 | `cancelled_at` | v4: when the event was cancelled, otherwise `null` |
+| `ends_at` | v5: the end; `starts_at` + 2 hours when the organiser set none |
+| `poster_url` | v5: path of the poster (`GET`, no token), `null` without one; `v` changes on every replacement |
+| `checked_in_at` | v5: when the caller was checked in at the door, otherwise `null` |
+| `my_rating` | v5: the caller's rating 1–5, `null` if not rated |
+| `feedback_open` | v5: `true` only if the caller was checked in, the event ended, not cancelled, not rated yet |
 
 The queue is ordered by `registration.updated_at`, then `registration_id`: the moment the
 student joined the waiting list, not when they first registered for the event.
@@ -453,6 +470,37 @@ plus, in v4, `event_cancelled` rows of cancelled events and `community_approved`
 
 `POST /me/notifications/read` marks all of the student's notifications read; `204`.
 
+## Week 13: ticket, feedback, poster (schema v5)
+
+### GET /events/{id}/ticket
+
+The ticket of the caller's **confirmed** place (FR-06):
+
+```json
+{ "event_id": 17, "registration_id": 31, "code": "K7Q2XM",
+  "qr": "QATYS-T1.31.Xw3n…", "checked_in_at": null,
+  "check_in_opens_at": "2026-11-20T07:00:00+05:00",
+  "check_in_closes_at": "2026-11-20T14:00:00+05:00" }
+```
+
+Nothing is stored: `qr` and `code` are HMAC-SHA256 of the registration id with the server
+secret, so a ticket cannot be made up, edited or moved to another event. `404 not_registered`,
+`409 ticket_waiting_list` (no place yet), `409 event_cancelled`. The app keeps an offline copy.
+
+### POST /events/{id}/feedback
+
+`{ "rating": 1..5, "comment"?: ≤ 500 }` → `201 { "event_id", "rating", "comment", "created_at" }`.
+Only a student **checked in** at the event (`403 not_checked_in`), only **after** `ends_at`
+(`409 event_not_finished`), **once** (`409 feedback_already_sent`, unique in the schema), not
+for a cancelled event (`409 event_cancelled`). Cannot be changed later. The organiser sees it
+anonymously.
+
+### GET /events/{id}/poster
+
+The image (`image/jpeg | png | webp`), **no token**: a poster is an advertisement, like the
+event. Only for a published or cancelled event; a draft's poster is `404 poster_not_found`.
+`Cache-Control: public, max-age=86400`, `X-Content-Type-Options: nosniff`.
+
 ## Admin panel (`/admin`, 11 November 2026)
 
 The page `/admin` and the endpoints under `/admin/...` behind it. Every call needs the token.
@@ -477,11 +525,17 @@ endpoint are listed in Swagger (tag *admin panel*). Week 12 adds the review of c
 | `POST /admin/communities/{id}/reject` | moderator | Week 12: `{ "reason"? }` (≤ 300, shown to the student) → `rejected`, no push, the name is free again; same errors |
 | `POST /admin/communities` | moderator | `{ "name", "description"?, "owner_email", "is_confirmed": true }` → `201`; `404 student_not_found`, `409 community_name_taken` |
 | `PATCH /admin/communities/{id}` | moderator | Any of `name`, `description` (`null` clears), `owner_email`, `is_confirmed` (`true` on an unconfirmed one = approval with push; `false` = back to `pending`) |
-| `GET /admin/events?community_id=` | admin | Every status, past included, newest deadline first, at most 300; `state` = `open \| closed \| finished \| cancelled \| draft`, `confirmed_count`, `waiting_count`, `notified_count`, `sent_count` |
-| `PATCH /admin/events/{id}` | owner / moderator | Any of `title`, `description`, `location`, `starts_at`, `registration_deadline`, `participant_limit` → `{ "event", "promoted", "rescheduled_notified" }` |
+| `GET /admin/events?community_id=` | admin | Every status, past included, newest deadline first, at most 300; `state` = `open \| closed \| live \| finished \| cancelled \| draft` (v5: `live` = started, not ended; `finished` = ended), `confirmed_count`, `waiting_count`, `notified_count`, `sent_count`, v5: `ends_at`, `poster_url`, `attended_count`, `feedback_count`, `average_rating` |
+| `PATCH /admin/events/{id}` | owner / moderator | Any of `title`, `description`, `location`, `starts_at`, `registration_deadline`, `participant_limit`, v5: `ends_at` (`null` = start + 2 h; moving the start moves an own end with it; `422 end_before_start`) → `{ "event", "promoted", "rescheduled_notified" }` |
 | `POST /admin/events/{id}/cancel` | owner / moderator | `status = 'cancelled'`, `cancelled_at`; every confirmed or waiting student gets `event_cancelled` → `{ "event", "notified" }`; `409 event_cancelled` the second time, `410 event_started` once it has started |
 | `POST /admin/events/{id}/notify` | owner / moderator | Notifies followers who joined after publication and resends pushes FCM has not accepted → `{ "new_recipients", "queued" }` |
 | `GET /admin/events/{id}/registrations` | owner / moderator | `{ "event", "items" }`: confirmed, then the waiting list with `position`, then cancelled |
+| `PUT /admin/events/{id}/poster` | owner / moderator | v5: the **raw image is the body** (`Content-Type: image/jpeg\|png\|webp`, ≤ 2 MB) → `{ "event_id", "mime", "size_bytes", "width", "height", "uploaded_at", "poster_url" }`. Replaces an existing one. `413 poster_too_large` (refused before reading), `415 unsupported_poster_type` (type read from the first bytes, never from the name), `422 poster_unreadable` (damaged or > 40 megapixels), `409 event_cancelled`, `409 community_not_confirmed` |
+| `DELETE /admin/events/{id}/poster` | owner / moderator | v5: → `204`; a moderator removes any poster; `404 poster_not_found` |
+| `POST /admin/events/{id}/check-in` | owner / moderator | v5: `{ "ticket": "<QR text or 6-char code>" }` → `{ "registration_id", "student_id", "full_name", "email", "checked_in_at", "attended_count", "confirmed_count" }`. Once per ticket: `409 already_checked_in` (+ `checked_in_at`, `student_name`); `422 invalid_ticket` (forged QR / unknown code), `409 ticket_other_event`, `409 ticket_not_confirmed` (waiting list), `409 check_in_not_open` (+ `opens_at`; 3 h before the start), `410 check_in_closed` (2 h after the end), `429` after 60 attempts a minute |
+| `POST /admin/events/{id}/finish` | owner / moderator | v5: "Finish now": `ends_at = now`, feedback opens → the event; `409 event_not_started`, `409 event_already_finished` |
+| `GET /admin/events/{id}/feedback` | owner / moderator | v5: `{ "event", "count", "average_rating", "distribution": [n1..n5], "items": [{ "rating", "comment", "created_at" }] }` — no names |
+| `GET /admin/analytics` | admin | v5: `{ "totals", "communities", "events" }` for every event that started: `registered` (confirmed), `attended` (checked in), `no_show` and `no_show_rate` % (only events that ended), `feedback_count`, `average_rating` |
 | `GET /admin/notifications?event_id=` | admin | Delivery log, newest first, at most 200: `sent_at` (`null` = not accepted by FCM), the student's `devices` now |
 | `POST /admin/push-test` | admin | One push (`data.type = "test"`) to every phone of the caller's own account, at once → `{ "fcm_configured", "devices", "sent", "failed", "removed" }` |
 | `GET /admin/students?q=` | moderator | Students with `is_moderator`, `is_locked`, counts; `q` matches email or name; at most 300 |

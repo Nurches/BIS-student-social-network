@@ -22,6 +22,7 @@ router = APIRouter(tags=["admin"])
         "payload_too_large",
         "deadline_in_the_past",
         "deadline_after_event_start",
+        "end_before_start",
         "timestamp_without_offset",
         "validation_failed",
     ),
@@ -36,7 +37,8 @@ def publish(
 ) -> dict:
     """FR-02: a deadline in the past is rejected. BR-01: only the owner of a
     community confirmed by the Student Union may publish. Every subscriber
-    gets one notification and a push (FR-01)."""
+    gets one notification and a push (FR-01). v5: `ends_at` is optional
+    (default: two hours after the start); feedback opens at the end."""
     with pool.connection() as conn:
         event_id, notification_ids = events.publish(
             conn, me.student_id, community_id, **body.model_dump()

@@ -46,7 +46,7 @@ FunctionKey = tuple[str, str]  # ("services.events", "publish")
 
 class CodeIndex:
     def __init__(self) -> None:
-        self.functions: dict[FunctionKey, ast.FunctionDef] = {}
+        self.functions: dict[FunctionKey, ast.FunctionDef | ast.AsyncFunctionDef] = {}
         self.imported_names: dict[str, dict[str, FunctionKey]] = {}
         self.imported_modules: dict[str, dict[str, str]] = {}
         for path in APP_DIR.rglob("*.py"):
@@ -55,7 +55,8 @@ class CodeIndex:
             names: dict[str, FunctionKey] = {}
             modules: dict[str, str] = {}
             for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
+                # v5: the poster upload is an `async def` (it reads the raw body).
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     self.functions[(module, node.name)] = node
                 elif isinstance(node, ast.ImportFrom) and node.level == 2:
                     for alias in node.names:
@@ -211,7 +212,10 @@ def test_framework_codes_are_in_the_catalog() -> None:
 
 
 def test_default_fastapi_422_schema_is_replaced_by_ours() -> None:
-    assert len(ROUTES) == 38  # Week 12: +5 (request, my requests, announcements, approve, reject)
+    # Week 12: +5 (request, my requests, announcements, approve, reject).
+    # Week 13: +9 (ticket, feedback, poster image; poster upload and delete, check-in,
+    # finish, feedback list, analytics).
+    assert len(ROUTES) == 47
     for path, route in ROUTES:
         (method,) = route.methods
         entry = OPENAPI["paths"][path][method.lower()]["responses"].get("422")

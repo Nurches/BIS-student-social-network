@@ -28,6 +28,15 @@ class ErrorOut(BaseModel):
     detail: list[ValidationIssue] | None = Field(
         default=None, description="422 `validation_failed` only: what did not match"
     )
+    checked_in_at: str | None = Field(
+        default=None, description="409 `already_checked_in` on check-in: when the ticket was used"
+    )
+    student_name: str | None = Field(
+        default=None, description="409 `already_checked_in` on check-in: whose ticket it is"
+    )
+    opens_at: str | None = Field(
+        default=None, description="409 `check_in_not_open`: when check-in opens"
+    )
 
 
 # ---------- auth ----------
@@ -82,6 +91,19 @@ class EventOut(BaseModel):
         description="v4: the start before the last reschedule; null if never moved"
     )
     cancelled_at: AwareDatetime | None
+    ends_at: AwareDatetime = Field(
+        description="v5: when the event ends (two hours after the start if not set)"
+    )
+    poster_url: str | None = Field(
+        description="v5: path of the poster image (GET, no token), null without a poster"
+    )
+    checked_in_at: AwareDatetime | None = Field(
+        description="v5: when the caller was checked in at the door, null if not"
+    )
+    my_rating: int | None = Field(description="v5: the caller's rating 1-5, null if not rated")
+    feedback_open: bool = Field(
+        description="v5: the caller may rate it now: checked in, ended, not rated yet"
+    )
 
 
 class FeedResponse(BaseModel):
@@ -96,6 +118,9 @@ class PublishEventRequest(_Body):
     starts_at: AwareDatetime
     registration_deadline: AwareDatetime
     participant_limit: int = Field(gt=0, le=10_000)
+    ends_at: AwareDatetime | None = Field(
+        default=None, description="v5: optional end; default two hours after `starts_at`"
+    )
 
 
 class PublishEventResponse(BaseModel):
@@ -115,6 +140,33 @@ class RegistrationWaitingOut(BaseModel):
 
 class CancelOut(BaseModel):
     status: Literal["cancelled"]
+
+
+# ---------- ticket and feedback (Week 13, schema v5) ----------
+
+
+class TicketOut(BaseModel):
+    """FR-06: shown in "My events"; the organiser scans `qr` or types `code`."""
+
+    event_id: int
+    registration_id: int
+    code: str = Field(description="6 characters, for a phone that cannot show the QR")
+    qr: str = Field(description="Text of the QR code: QATYS-T1.<registration>.<signature>")
+    checked_in_at: AwareDatetime | None
+    check_in_opens_at: AwareDatetime = Field(description="3 hours before the start")
+    check_in_closes_at: AwareDatetime = Field(description="2 hours after the end")
+
+
+class FeedbackRequest(_Body):
+    rating: int = Field(ge=1, le=5, description="1 = poor … 5 = excellent")
+    comment: str | None = Field(default=None, max_length=500)
+
+
+class FeedbackOut(BaseModel):
+    event_id: int
+    rating: int
+    comment: str | None
+    created_at: AwareDatetime
 
 
 # ---------- devices ----------
@@ -334,11 +386,17 @@ class AdminEventOut(BaseModel):
     registration_deadline: AwareDatetime
     participant_limit: int
     status: Literal["draft", "published", "cancelled"]
-    state: Literal["open", "closed", "finished", "cancelled", "draft"] = Field(
-        description="open: registration open; closed: deadline passed; finished: started"
+    state: Literal["open", "closed", "live", "finished", "cancelled", "draft"] = Field(
+        description="open: registration open; closed: deadline passed; "
+        "live: started, not ended (v5); finished: ended"
     )
     previous_starts_at: AwareDatetime | None = Field(description="v4: start before the last move")
     cancelled_at: AwareDatetime | None
+    ends_at: AwareDatetime = Field(description="v5: the end (two hours after the start if not set)")
+    poster_url: str | None = Field(description="v5: the poster, null without one")
+    attended_count: int = Field(description="v5: confirmed students checked in at the door")
+    feedback_count: int
+    average_rating: float | None = Field(description="v5: mean of the ratings, null without any")
     confirmed_count: int
     waiting_count: int
     notified_count: int = Field(description="Notification rows of this event (all kinds)")
@@ -359,6 +417,9 @@ class EventUpdateRequest(_Body):
     starts_at: AwareDatetime | None = None
     registration_deadline: AwareDatetime | None = None
     participant_limit: int | None = Field(default=None, gt=0, le=10_000)
+    ends_at: AwareDatetime | None = Field(
+        default=None, description="v5: null = back to two hours after the start"
+    )
 
     @model_validator(mode="after")
     def _required_fields_are_not_null(self) -> "EventUpdateRequest":
@@ -386,6 +447,7 @@ class AdminRegistrationOut(BaseModel):
     full_name: str
     status: Literal["confirmed", "waiting_list", "cancelled"]
     position: int | None = Field(description="Place on the waiting list, 1 = next")
+    checked_in_at: AwareDatetime | None = Field(description="v5: checked in at the door")
     created_at: AwareDatetime
     updated_at: AwareDatetime
 
@@ -393,6 +455,87 @@ class AdminRegistrationOut(BaseModel):
 class AdminRegistrationsResponse(BaseModel):
     event: AdminEventOut
     items: list[AdminRegistrationOut]
+
+
+class PosterOut(BaseModel):
+    event_id: int
+    mime: Literal["image/jpeg", "image/png", "image/webp"]
+    size_bytes: int = Field(description="After re-encoding (EXIF and GPS removed)")
+    width: int
+    height: int
+    uploaded_at: AwareDatetime
+    poster_url: str
+
+
+class CheckInRequest(_Body):
+    ticket: str = Field(
+        min_length=1, max_length=200, description="The scanned QR text, or the 6-character code"
+    )
+
+
+class CheckInOut(BaseModel):
+    registration_id: int
+    student_id: int
+    full_name: str
+    email: str
+    checked_in_at: AwareDatetime
+    attended_count: int = Field(description="Checked in so far, this one included")
+    confirmed_count: int
+
+
+class AdminFeedbackItem(BaseModel):
+    rating: int
+    comment: str | None
+    created_at: AwareDatetime
+
+
+class AdminFeedbackResponse(BaseModel):
+    """Anonymous: the organiser sees what was said, not who said it."""
+
+    event: AdminEventOut
+    count: int
+    average_rating: float | None
+    distribution: list[int] = Field(description="How many 1s, 2s, 3s, 4s and 5s")
+    items: list[AdminFeedbackItem]
+
+
+class AnalyticsSummary(BaseModel):
+    events: int = Field(description="Events that started")
+    finished_events: int = Field(description="Of them, ended: no-show counts only these")
+    registered: int = Field(description="Confirmed places of the ended events")
+    attended: int
+    no_show: int
+    no_show_rate: float | None = Field(description="Percent of registered who did not come")
+    attendance_rate: float | None
+    feedback_count: int
+    average_rating: float | None
+
+
+class AnalyticsCommunity(AnalyticsSummary):
+    community_id: int
+    community_name: str
+
+
+class AnalyticsEvent(BaseModel):
+    event_id: int
+    title: str
+    community_id: int
+    community_name: str
+    starts_at: AwareDatetime
+    ends_at: AwareDatetime
+    finished: bool
+    registered: int = Field(description="Confirmed places")
+    attended: int = Field(description="Checked in at the door")
+    no_show: int | None = Field(description="Null while the event is still live")
+    no_show_rate: float | None
+    feedback_count: int
+    average_rating: float | None
+
+
+class AnalyticsResponse(BaseModel):
+    totals: AnalyticsSummary
+    communities: list[AnalyticsCommunity]
+    events: list[AnalyticsEvent]
 
 
 class NotifyOut(BaseModel):

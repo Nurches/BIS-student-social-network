@@ -191,6 +191,32 @@
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor;
              border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Week 13: posters, check-in, analytics ---------- */
+  .event.has-poster { grid-template-columns: 132px minmax(0, 1fr) auto; }
+  .event .thumb { width: 132px; aspect-ratio: 16 / 9; border-radius: 8px; object-fit: cover;
+                  background: var(--surface-2); border: 1px solid var(--line); }
+  @media (max-width: 560px) { .event.has-poster { grid-template-columns: 1fr; } .event .thumb { width: 100%; } }
+  .poster-preview { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 10px;
+                    border: 1px solid var(--line); background: var(--surface-2); display: block; }
+  .poster-empty { display: grid; place-items: center; width: 100%; aspect-ratio: 16 / 9;
+                  border-radius: 10px; border: 1px dashed var(--line); color: var(--muted); }
+  .checkin-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .checkin-box input { font-size: 1.25rem; letter-spacing: .12em; text-transform: uppercase; }
+  .scan { position: relative; margin-top: 12px; border-radius: 12px; overflow: hidden; background: #000; }
+  .scan video { display: block; width: 100%; max-height: 320px; object-fit: cover; }
+  .scan .frame { position: absolute; inset: 18% 28%; border: 3px solid var(--accent); border-radius: 14px; }
+  .result-log { display: grid; gap: 6px; margin-top: 14px; }
+  .result-log .notice { margin: 0; }
+  .big-count { font-size: 2.25rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .bars { display: grid; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 40px; gap: 8px; align-items: center; }
+  .bar { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); }
+  .stars { color: #f59e0b; letter-spacing: 1px; white-space: nowrap; }
+  .comment { padding: 10px 12px; border-radius: 10px; background: var(--surface-2); }
+  .attend { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; min-width: 140px; }
+  .attend .bar > span { background: var(--ok); }
   @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 </style>
 </head>
@@ -226,6 +252,7 @@
       <button data-view="communities"><span class="ico" aria-hidden="true">◇</span>Communities</button>
       <button data-view="events"><span class="ico" aria-hidden="true">▤</span>Events</button>
       <button data-view="publish"><span class="ico" aria-hidden="true">＋</span>Publish event</button>
+      <button data-view="analytics"><span class="ico" aria-hidden="true">▥</span>Analytics</button>
       <button data-view="pushes"><span class="ico" aria-hidden="true">◉</span>Pushes</button>
       <button data-view="students" data-moderator><span class="ico" aria-hidden="true">☰</span>Students</button>
     </nav>
@@ -249,7 +276,7 @@ const API = "/api/v1";
 const PATHS = {
   me: "/admin/me", overview: "/admin/overview", communities: "/admin/communities",
   events: "/admin/events", notifications: "/admin/notifications", pushTest: "/admin/push-test",
-  students: "/admin/students",
+  students: "/admin/students", analytics: "/admin/analytics",
 };
 const REASONS = {
   unauthorized: "Your session has expired. Sign in again.",
@@ -275,6 +302,21 @@ const REASONS = {
   too_many_requests: "Too many attempts. Wait a minute.",
   invalid_credentials: "Wrong email or password.",
   payload_too_large: "The text is too long.",
+  // Week 13 (schema v5)
+  end_before_start: "The end must be after the start.",
+  poster_too_large: "The image is larger than 2 MB. Save it smaller (for example as JPEG) and try again.",
+  unsupported_poster_type: "Only JPEG, PNG or WebP images. The file is something else, whatever its name says.",
+  poster_unreadable: "The image is damaged or too large in pixels (over 40 megapixels).",
+  poster_not_found: "This event has no poster.",
+  community_not_confirmed: "The community is not confirmed, so its events cannot get a poster.",
+  invalid_ticket: "Not a ticket of this event: check the code, or the QR is not from Qatys.",
+  ticket_other_event: "This ticket is for another event.",
+  ticket_not_confirmed: "This student is on the waiting list or cancelled: no place at this event.",
+  already_checked_in: "This ticket was already used.",
+  check_in_not_open: "Check-in opens 3 hours before the start.",
+  check_in_closed: "Check-in closed 2 hours after the end.",
+  event_not_started: "The event has not started yet.",
+  event_already_finished: "The event has already ended.",
 };
 const KINDS = {
   event_published: ["New event", "b-mute"], waiting_list_promoted: ["Got a place", "b-info"],
@@ -282,7 +324,8 @@ const KINDS = {
   community_approved: ["Community approved", "b-ok"],
 };
 const STATE = {
-  open: ["Open", "b-ok"], closed: ["Registration closed", "b-warn"], finished: ["Finished", "b-mute"],
+  open: ["Open", "b-ok"], closed: ["Registration closed", "b-warn"], live: ["Live now", "b-info"],
+  finished: ["Finished", "b-mute"],
   cancelled: ["Cancelled", "b-err"], draft: ["Draft", "b-mute"],
 };
 
@@ -653,7 +696,7 @@ const VIEWS = {
       communities.map((c) => h("option", { value: String(c.community_id), text: c.name, selected: f.community === String(c.community_id) })));
     const search = h("input", { type: "search", placeholder: "Search title", value: f.text, "aria-label": "Search title",
       oninput: (e) => { f.text = e.target.value; draw(); } });
-    const states = [["all", "All"], ["open", "Open"], ["closed", "Closed"], ["finished", "Finished"], ["cancelled", "Cancelled"]];
+    const states = [["all", "All"], ["open", "Open"], ["closed", "Closed"], ["live", "Live"], ["finished", "Finished"], ["cancelled", "Cancelled"]];
     const chips = h("div", { class: "chips", role: "group", "aria-label": "State" }, states.map(([key, label]) =>
       h("button", { class: "chip", type: "button", "aria-pressed": String(f.state === key), text: label,
         onclick: (e) => { f.state = key; for (const c of chips.children) c.setAttribute("aria-pressed", String(c === e.currentTarget)); draw(); } })));
@@ -698,6 +741,8 @@ const VIEWS = {
       h("div", { class: "grid2" },
         field("p-deadline", "Registration deadline", h("input", { id: "p-deadline", type: "datetime-local", required: true, value: inHours(24) })),
         field("p-starts", "Starts at", h("input", { id: "p-starts", type: "datetime-local", required: true, value: inHours(48) }))),
+      field("p-ends", "Ends at (optional)", h("input", { id: "p-ends", type: "datetime-local" }),
+        "Empty = two hours after the start. Students who were checked in can rate the event when it ends."),
       h("p", { class: "hint", text: "Times are in this computer's time zone (" + zoneLabel + "). The deadline must be in the future and not after the start." }),
       field("p-limit", "Participant limit", h("input", { id: "p-limit", type: "number", min: "1", max: "10000", required: true, value: "30" }),
         "When the places are taken, the next students join the waiting list."),
@@ -713,14 +758,73 @@ const VIEWS = {
           registration_deadline: fromLocalInput($("p-deadline").value),
           starts_at: fromLocalInput($("p-starts").value),
           participant_limit: Number($("p-limit").value),
+          ends_at: $("p-ends").value ? fromLocalInput($("p-ends").value) : null,
         });
         if (!res.ok) { toast(reason(res), false); return; }
-        toast("Published event #" + res.data.event_id + ". Pushes are on their way.");
+        toast("Published event #" + res.data.event_id + ". Pushes are on their way. Add a poster from its card.");
         ui.eventFilter = { community, state: "all", text: "" };
         go("events");
       });
     });
     return [head, form];
+  },
+
+  async analytics() {
+    const data = await load(PATHS.analytics);
+    const t = data.totals;
+    const pct = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(1).replace(/\.0$/, "") + "%");
+    const avg = (v) => (v === null || v === undefined ? "—" : Number(v).toFixed(2).replace(/0$/, ""));
+    const tile = (label, value, sub) => h("div", { class: "tile" },
+      h("div", { class: "label", text: label }), h("div", { class: "value", text: value }),
+      sub ? h("div", { class: "sub", text: sub }) : null);
+    const attendBar = (registered, attended) => {
+      const p = registered ? Math.round(100 * attended / registered) : 0;
+      return h("div", { class: "attend" }, h("span", { class: "small", text: attended + " of " + registered }),
+        h("div", { class: "bar", role: "img", "aria-label": p + "% attended" }, h("span", { style: "width:" + p + "%" })));
+    };
+    const head = pageHead("Analytics", "Who registered, who came, and how they rated it. No-show counts only events that ended.",
+      h("button", { class: "btn secondary", type: "button", text: "Download CSV", disabled: !data.events.length,
+        onclick: () => csvDownload("qatys-attendance.csv", [
+          ["event_id", "title", "community", "starts_at", "ends_at", "finished", "registered", "attended", "no_show", "no_show_rate", "ratings", "average_rating"],
+          ...data.events.map((e) => [e.event_id, e.title, e.community_name, e.starts_at, e.ends_at, e.finished, e.registered, e.attended, e.no_show, e.no_show_rate, e.feedback_count, e.average_rating])]) }));
+    if (!data.events.length) {
+      return [head, emptyBox("No event has started yet. Numbers appear here after the first check-ins.")];
+    }
+    const tiles = h("div", { class: "tiles" },
+      tile("Events held", t.finished_events, t.events - t.finished_events ? (t.events - t.finished_events) + " live now" : "all ended"),
+      tile("Registered", t.registered, "confirmed places"),
+      tile("Attended", t.attended, pct(t.attendance_rate) + " of registered"),
+      tile("No-show", pct(t.no_show_rate), plural(t.no_show, "student", "students") + " did not come"),
+      tile("Average rating", avg(t.average_rating), plural(t.feedback_count, "rating", "ratings")));
+    const communityRows = data.communities.map((c) => h("tr", {},
+      h("td", { style: "font-weight:700", text: c.community_name }),
+      h("td", { class: "num", text: c.finished_events }),
+      h("td", {}, attendBar(c.registered, c.attended)),
+      h("td", { class: "num", text: pct(c.no_show_rate) }),
+      h("td", {}, c.average_rating === null ? h("span", { class: "muted", text: "—" })
+        : h("span", {}, h("span", { class: "stars", text: starText(c.average_rating) }), " " + avg(c.average_rating))),
+      h("td", { class: "num", text: c.feedback_count })));
+    const eventRows = data.events.map((e) => h("tr", {},
+      h("td", {}, h("div", { style: "font-weight:700", text: e.title }), h("div", { class: "muted small", text: e.community_name + " · " + fmt(e.starts_at) })),
+      h("td", {}, e.finished ? badge("Ended", "b-mute") : badge("Live now", "b-info")),
+      h("td", {}, attendBar(e.registered, e.attended)),
+      h("td", { class: "num", text: e.finished ? pct(e.no_show_rate) : "—" }),
+      h("td", {}, e.average_rating === null ? h("span", { class: "muted", text: "—" })
+        : h("span", {}, h("span", { class: "stars", text: starText(e.average_rating) }), " " + avg(e.average_rating) + " (" + e.feedback_count + ")")),
+      h("td", {}, h("button", { class: "btn secondary small", type: "button", text: "Feedback",
+        onclick: () => openFeedback({ event_id: e.event_id, title: e.title }) }))));
+    return [
+      head, tiles,
+      h("div", { class: "section-title" }, h("h3", { text: "By community" })),
+      h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Community", "Events", "Attended", "No-show", "Rating", "Ratings"].map((x) => h("th", { scope: "col", text: x })))),
+        h("tbody", {}, communityRows))),
+      h("div", { class: "section-title" }, h("h3", { text: "By event" })),
+      h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Event", "State", "Attended", "No-show", "Rating", ""].map((x) => h("th", { scope: "col", text: x })))),
+        h("tbody", {}, eventRows))),
+      h("p", { class: "hint", text: "Registered = confirmed places (the waiting list does not count). Attended = checked in at the door with the QR or the code. No-show % = (registered − attended) ÷ registered." }),
+    ];
   },
 
   async pushes() {
@@ -793,15 +897,24 @@ function eventCard(e) {
   const percent = Math.min(100, Math.round((e.confirmed_count / e.participant_limit) * 100));
   const [stateLabel, stateClass] = STATE[e.state] || [e.state, "b-mute"];
   const live = e.status === "published";
-  return h("article", { class: "card event" },
+  const started = e.state === "live" || e.state === "finished";
+  const doorOpen = live && Date.now() >= new Date(e.starts_at).getTime() - 3 * 3600000
+    && Date.now() <= new Date(e.ends_at).getTime() + 2 * 3600000;
+  return h("article", { class: "card event" + (e.poster_url ? " has-poster" : "") },
+    e.poster_url ? h("img", { class: "thumb", src: e.poster_url, alt: "Poster of " + e.title, loading: "lazy" }) : null,
     h("div", {},
       h("div", { class: "title", text: e.title }),
       h("div", { class: "meta" },
         h("span", { text: e.community_name }),
         h("span", { text: "Deadline " + fmt(e.registration_deadline) }),
         h("span", { text: "Starts " + fmt(e.starts_at) }),
+        h("span", { text: "Ends " + fmt(e.ends_at) }),
         e.location ? h("span", { text: e.location }) : null),
-      e.previous_starts_at ? h("div", { class: "muted small", style: "margin-top:4px", text: "Moved from " + fmt(e.previous_starts_at) }) : null),
+      e.previous_starts_at ? h("div", { class: "muted small", style: "margin-top:4px", text: "Moved from " + fmt(e.previous_starts_at) }) : null,
+      started && live ? h("div", { class: "small", style: "margin-top:6px" },
+        badge("Attended " + e.attended_count + " / " + e.confirmed_count, "b-ok"), " ",
+        e.feedback_count ? h("span", {}, h("span", { class: "stars", text: starText(e.average_rating) }),
+          " " + Number(e.average_rating).toFixed(1) + " · " + plural(e.feedback_count, "rating", "ratings")) : h("span", { class: "muted", text: "no ratings yet" })) : null),
     h("div", { class: "side" },
       badge(stateLabel, stateClass),
       h("div", { class: "small", text: e.confirmed_count + " / " + e.participant_limit + " places" +
@@ -810,9 +923,18 @@ function eventCard(e) {
         h("span", { style: "width:" + percent + "%" })),
       h("div", { class: "muted small", text: "Pushes " + e.sent_count + " / " + e.notified_count + " delivered" })),
     h("div", { class: "row-actions" },
+      doorOpen ? h("button", { class: "btn small", type: "button", text: "Check-in", onclick: () => openCheckIn(e) }) : null,
       h("button", { class: "btn secondary small", type: "button", text: "Participants", onclick: () => openParticipants(e) }),
-      live ? h("button", { class: "btn secondary small", type: "button", text: "Edit", onclick: () => openEventForm(e) }) : null,
-      live ? h("button", { class: "btn secondary small", type: "button", text: "Resend pushes",
+      live || e.poster_url ? h("button", { class: "btn secondary small", type: "button", text: e.poster_url ? "Poster" : "Add poster", onclick: () => openPoster(e) }) : null,
+      live && !started ? h("button", { class: "btn secondary small", type: "button", text: "Edit", onclick: () => openEventForm(e) }) : null,
+      started && live ? h("button", { class: "btn secondary small", type: "button", text: "Feedback", onclick: () => openFeedback(e) }) : null,
+      e.state === "live" ? confirmButton("Finish now", "Click again: feedback opens", async () => {
+        const res = await call("POST", "/admin/events/" + e.event_id + "/finish");
+        if (!res.ok) { toast(reason(res), false); return; }
+        toast("“" + e.title + "” has ended. Checked-in students can rate it in the app now.");
+        refresh();
+      }) : null,
+      live && !started ? h("button", { class: "btn secondary small", type: "button", text: "Resend pushes",
         onclick: (ev) => busy(ev.currentTarget, async () => {
           const res = await call("POST", "/admin/events/" + e.event_id + "/notify");
           if (!res.ok) { toast(reason(res), false); return; }
@@ -823,7 +945,7 @@ function eventCard(e) {
         }) }) : null,
       h("button", { class: "btn secondary small", type: "button", text: "Delivery log",
         onclick: () => { ui.logEvent = String(e.event_id); go("pushes"); } }),
-      live && e.state !== "finished" ? confirmButton("Cancel event",
+      live && !started ? confirmButton("Cancel event",
         "Click again: " + plural(e.confirmed_count + e.waiting_count, "student gets", "students get") + " a push", async () => {
         const res = await call("POST", "/admin/events/" + e.event_id + "/cancel");
         if (!res.ok) { toast(reason(res), false); return; }
@@ -833,6 +955,11 @@ function eventCard(e) {
         setTimeout(refresh, 1200);
       }) : null));
 }
+
+const starText = (avg) => {
+  const n = Math.round(Number(avg) || 0);
+  return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n);
+};
 
 function deliveryBadge(n) {
   if (n.sent_at) return h("span", {}, badge("Delivered", "b-ok"), h("div", { class: "muted small", text: fmt(n.sent_at) }));
@@ -914,6 +1041,7 @@ function openDrawer(title, sub, ...content) {
   if (!$("drawer").open) $("drawer").showModal();
 }
 $("drawer-close").addEventListener("click", () => $("drawer").close());
+$("drawer").addEventListener("close", () => stopCamera());
 $("drawer").addEventListener("click", (e) => { if (e.target === $("drawer")) $("drawer").close(); });
 
 function openCommunityForm(c) {
@@ -1009,7 +1137,9 @@ function openEventForm(e) {
         h("input", { id: "e-deadline", type: "datetime-local", required: true, value: toLocalInput(e.registration_deadline) })),
       h("div", {}, h("label", { for: "e-starts", text: "Starts at" }),
         h("input", { id: "e-starts", type: "datetime-local", required: true, value: toLocalInput(e.starts_at) }))),
-    h("p", { class: "hint", text: "Times in " + zoneLabel + "." }),
+    h("label", { for: "e-ends", text: "Ends at" }),
+    h("input", { id: "e-ends", type: "datetime-local", required: true, value: toLocalInput(e.ends_at) }),
+    h("p", { class: "hint", text: "Times in " + zoneLabel + ". Moving the start moves the end with it." }),
     h("label", { for: "e-limit", text: "Participant limit" }),
     h("input", { id: "e-limit", type: "number", min: String(Math.max(1, e.confirmed_count)), max: "10000", required: true, value: String(e.participant_limit) }),
     h("p", { class: "hint", text: e.confirmed_count + " confirmed, " + e.waiting_count + " waiting. A larger limit moves waiting students up at once and sends each of them a push; it cannot go below the confirmed count. A new start time is sent as a push to every registered student." }),
@@ -1032,6 +1162,7 @@ function openEventForm(e) {
       if (location !== (e.location || null)) changes.location = location;
       if ($("e-deadline").value !== toLocalInput(e.registration_deadline)) changes.registration_deadline = deadline;
       if ($("e-starts").value !== toLocalInput(e.starts_at)) changes.starts_at = starts;
+      if ($("e-ends").value !== toLocalInput(e.ends_at)) changes.ends_at = fromLocalInput($("e-ends").value);
       if (limit !== e.participant_limit) changes.participant_limit = limit;
       if (!Object.keys(changes).length) { $("drawer").close(); return; }
       const res = await call("PATCH", "/admin/events/" + e.event_id, changes);
@@ -1056,26 +1187,225 @@ async function openParticipants(e) {
   const active = data.items.filter((r) => r.status !== "cancelled");
   const summary = h("div", { class: "chips", style: "margin-bottom:14px" },
     badge(ev.confirmed_count + " / " + ev.participant_limit + " confirmed", "b-ok"),
+    badge(ev.attended_count + " checked in", "b-info"),
     badge(ev.waiting_count + " waiting", "b-warn"),
     badge(fmt(ev.starts_at), "b-mute"));
   const actions = h("div", { class: "actions", style: "margin:0 0 14px" },
     h("button", { class: "btn secondary small", type: "button", text: "Download CSV", disabled: !data.items.length,
       onclick: () => csvDownload("qatys-event-" + ev.event_id + ".csv", [
-        ["status", "waiting_position", "full_name", "email", "registered_at", "status_since"],
-        ...data.items.map((r) => [r.status, r.position, r.full_name, r.email, r.created_at, r.updated_at])]) }),
+        ["status", "waiting_position", "full_name", "email", "registered_at", "status_since", "checked_in_at"],
+        ...data.items.map((r) => [r.status, r.position, r.full_name, r.email, r.created_at, r.updated_at, r.checked_in_at])]) }),
     h("button", { class: "btn secondary small", type: "button", text: "Copy emails", disabled: !active.length,
       onclick: async () => {
         try { await navigator.clipboard.writeText(active.map((r) => r.email).join(", ")); toast("Copied " + plural(active.length, "email", "emails") + "."); }
         catch (_) { toast("The browser did not allow copying.", false); }
       } }));
   const table = data.items.length ? h("div", { class: "table-wrap" }, h("table", {},
-    h("thead", {}, h("tr", {}, ["Status", "Student", "Since"].map((t) => h("th", { scope: "col", text: t })))),
+    h("thead", {}, h("tr", {}, ["Status", "Student", "Since", "At the door"].map((t) => h("th", { scope: "col", text: t })))),
     h("tbody", {}, data.items.map((r) => h("tr", {},
       h("td", {}, badge(label[r.status][0] + (r.position ? " #" + r.position : ""), label[r.status][1])),
       h("td", {}, h("div", { text: r.full_name }), h("div", { class: "muted small", text: r.email })),
-      h("td", { class: "small", text: fmt(r.updated_at) }))))))
+      h("td", { class: "small", text: fmt(r.updated_at) }),
+      h("td", {}, r.checked_in_at ? badge("✓ " + fmt(r.checked_in_at), "b-ok") : h("span", { class: "muted small", text: "—" })))))))
     : emptyBox("Nobody has registered yet.");
   $("drawer-body").replaceChildren(summary, actions, table);
+}
+
+// ---------- Week 13: poster, check-in, feedback ----------
+
+const POSTER_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const POSTER_MAX = 2 * 1024 * 1024;
+
+/** PUT of a raw file (the poster): the body is the image itself, not JSON. */
+async function upload(path, file) {
+  let res;
+  try {
+    res = await fetch(API + path, { method: "PUT", body: file,
+      headers: { "Content-Type": file.type || "application/octet-stream", Authorization: "Bearer " + token } });
+  } catch (_) {
+    return { status: 0, data: { error: "network" }, ok: false };
+  }
+  let data = null;
+  try { data = await res.json(); } catch (_) { /* empty */ }
+  if (res.status === 401 && token) signOut("Your session has expired. Sign in again.");
+  return { status: res.status, data, ok: res.ok };
+}
+
+function openPoster(e) {
+  let chosen = null;
+  const preview = h("div", {}, e.poster_url
+    ? h("img", { class: "poster-preview", src: e.poster_url, alt: "Current poster of " + e.title })
+    : h("div", { class: "poster-empty", text: "No poster yet — the app shows the community's colours." }));
+  const message = h("div", { "aria-live": "polite" });
+  const input = h("input", { id: "poster-file", type: "file", accept: POSTER_TYPES.join(",") });
+  const send = h("button", { class: "btn", type: "button", text: e.poster_url ? "Replace poster" : "Upload poster", disabled: true });
+  input.addEventListener("change", () => {
+    message.replaceChildren();
+    chosen = input.files && input.files[0];
+    send.disabled = !chosen;
+    if (!chosen) return;
+    // Quick checks in the browser; the server checks again (it trusts no file name).
+    if (chosen.size > POSTER_MAX) {
+      message.replaceChildren(h("div", { class: "notice err", text: REASONS.poster_too_large + " (" + (chosen.size / 1048576).toFixed(1) + " MB)" }));
+      send.disabled = true; return;
+    }
+    if (chosen.type && !POSTER_TYPES.includes(chosen.type)) {
+      message.replaceChildren(h("div", { class: "notice err", text: REASONS.unsupported_poster_type }));
+      send.disabled = true; return;
+    }
+    const url = URL.createObjectURL(chosen);
+    preview.replaceChildren(h("img", { class: "poster-preview", src: url, alt: "New poster (not uploaded yet)",
+      onload: () => URL.revokeObjectURL(url) }));
+    message.replaceChildren(h("div", { class: "notice info", text: "Preview. Press “" + send.textContent + "” to publish it." }));
+  });
+  send.addEventListener("click", () => busy(send, async () => {
+    const res = await upload("/admin/events/" + e.event_id + "/poster", chosen);
+    if (!res.ok) { message.replaceChildren(h("div", { class: "notice err", text: reason(res) })); return; }
+    toast("Poster saved (" + res.data.width + "×" + res.data.height + ", " + Math.round(res.data.size_bytes / 1024) + " KB, photo data removed). It is in the app now.");
+    $("drawer").close(); refresh();
+  }));
+  const remove = e.poster_url ? confirmButton("Remove poster", "Click again to remove", async () => {
+    const res = await call("DELETE", "/admin/events/" + e.event_id + "/poster");
+    if (!res.ok) { toast(reason(res), false); return; }
+    toast("Poster removed."); $("drawer").close(); refresh();
+  }) : null;
+  openDrawer(e.poster_url ? "Poster" : "Add a poster", e.title,
+    preview,
+    h("label", { for: "poster-file", text: "Image file" }), input,
+    h("p", { class: "hint", text: "JPEG, PNG or WebP, up to 2 MB. Best: landscape 16:9, at least 1200×675 px. The server turns photos upright, scales them to 1600 px and removes EXIF and GPS data." }),
+    message,
+    h("div", { class: "actions" }, send, remove,
+      h("button", { class: "btn secondary", type: "button", text: "Close", onclick: () => $("drawer").close() })));
+}
+
+let camera = null; // { stream, timer }
+
+function stopCamera() {
+  if (!camera) return;
+  clearInterval(camera.timer);
+  for (const track of camera.stream.getTracks()) track.stop();
+  camera = null;
+}
+
+async function openCheckIn(e) {
+  let data;
+  openDrawer("Check-in", e.title, h("p", { class: "muted" }, h("span", { class: "spinner" }), " Loading…"));
+  try { data = await load("/admin/events/" + e.event_id + "/registrations"); }
+  catch (err) { $("drawer-body").replaceChildren(h("div", { class: "notice err", text: err.message })); return; }
+  let attended = data.event.attended_count, confirmed = data.event.confirmed_count;
+  const count = h("div", { class: "big-count", text: attended + " / " + confirmed });
+  const log = h("div", { class: "result-log", "aria-live": "polite" });
+  const input = h("input", { id: "ticket", autocomplete: "off", spellcheck: "false", maxlength: "200",
+    placeholder: "Code, e.g. K7Q2XM", "aria-label": "Ticket code or QR text" });
+  const submit = h("button", { class: "btn", type: "submit", text: "Check in" });
+  let lastScan = "", lastScanAt = 0;
+
+  async function checkIn(ticket) {
+    ticket = ticket.trim();
+    if (!ticket) return;
+    const res = await call("POST", "/admin/events/" + e.event_id + "/check-in", { ticket });
+    let node;
+    if (res.ok) {
+      attended = res.data.attended_count; confirmed = res.data.confirmed_count;
+      count.textContent = attended + " / " + confirmed;
+      node = h("div", { class: "notice ok" }, h("strong", { text: "✓ " + res.data.full_name }), " · " + res.data.email + " · " + fmt(res.data.checked_in_at));
+    } else if (res.data && res.data.error === "already_checked_in") {
+      node = h("div", { class: "notice warn", text: "Already used: " + res.data.student_name + " came in at " + fmt(res.data.checked_in_at) + ". Do not let the same ticket in twice." });
+    } else if (res.data && res.data.error === "check_in_not_open") {
+      node = h("div", { class: "notice warn", text: REASONS.check_in_not_open + " Opens " + fmt(res.data.opens_at) + "." });
+    } else {
+      node = h("div", { class: "notice err", text: reason(res) });
+    }
+    log.prepend(node);
+    while (log.children.length > 8) log.lastChild.remove();
+  }
+
+  const form = h("form", { class: "checkin-box" }, input, submit);
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    await busy(submit, () => checkIn(input.value));
+    input.value = ""; input.focus();
+  });
+
+  const scanBox = h("div", {});
+  const scanButton = h("button", { class: "btn secondary", type: "button", text: "Scan QR with the camera" });
+  scanButton.addEventListener("click", async () => {
+    if (camera) { stopCamera(); scanBox.replaceChildren(); scanButton.textContent = "Scan QR with the camera"; return; }
+    if (!("BarcodeDetector" in window) || !navigator.mediaDevices) {
+      scanBox.replaceChildren(h("div", { class: "notice warn", style: "margin-top:12px",
+        text: "This browser cannot read QR codes from the camera (Chrome or Edge on a Mac or Android can). Type the 6-character code under the QR instead, or use a USB QR scanner: it types into the field above." }));
+      return;
+    }
+    let detector;
+    try {
+      const formats = await BarcodeDetector.getSupportedFormats();
+      if (!formats.includes("qr_code")) throw new Error("no qr");
+      detector = new BarcodeDetector({ formats: ["qr_code"] });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      const video = h("video", { autoplay: true, playsinline: true, muted: true });
+      video.srcObject = stream;
+      scanBox.replaceChildren(h("div", { class: "scan" }, video, h("div", { class: "frame", "aria-hidden": "true" })));
+      scanButton.textContent = "Stop camera";
+      camera = { stream, timer: setInterval(async () => {
+        if (video.readyState < 2) return;
+        try {
+          const codes = await detector.detect(video);
+          const text = codes.length ? codes[0].rawValue : "";
+          // The same QR stays in front of the camera: read it once per 4 seconds.
+          if (text && (text !== lastScan || Date.now() - lastScanAt > 4000)) {
+            lastScan = text; lastScanAt = Date.now();
+            await checkIn(text);
+          }
+        } catch (_) { /* a frame that could not be read */ }
+      }, 350) };
+    } catch (err) {
+      stopCamera();
+      scanBox.replaceChildren(h("div", { class: "notice err", style: "margin-top:12px",
+        text: "The camera could not start (" + (err.name || err.message) + "). Allow the camera for this site, or type the code." }));
+    }
+  });
+
+  const opens = new Date(new Date(data.event.starts_at).getTime() - 3 * 3600000).toISOString();
+  const closes = new Date(new Date(data.event.ends_at).getTime() + 2 * 3600000).toISOString();
+  $("drawer-body").replaceChildren(
+    h("div", { style: "display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px" },
+      h("div", {}, h("div", { class: "muted small", text: "Checked in / confirmed" }), count),
+      h("p", { class: "muted small", style: "margin:0;flex:1 1 240px",
+        text: "Scan the QR on the student's phone (My events → Ticket), or type the 6-character code under it. One ticket gets in once. The door is open " + fmt(opens) + " – " + fmt(closes) + "." })),
+    form,
+    h("div", { class: "actions", style: "margin-top:10px" }, scanButton),
+    scanBox,
+    log);
+  input.focus();
+}
+
+async function openFeedback(e) {
+  openDrawer("Feedback", e.title, h("p", { class: "muted" }, h("span", { class: "spinner" }), " Loading…"));
+  let data;
+  try { data = await load("/admin/events/" + e.event_id + "/feedback"); }
+  catch (err) { $("drawer-body").replaceChildren(h("div", { class: "notice err", text: err.message })); return; }
+  const max = Math.max(1, ...data.distribution);
+  const bars = h("div", { class: "bars" }, [5, 4, 3, 2, 1].map((star) => h("div", { class: "bar-row" },
+    h("span", { class: "small", text: star + " ★" }),
+    h("div", { class: "bar", role: "img", "aria-label": data.distribution[star - 1] + " ratings of " + star },
+      h("span", { style: "width:" + Math.round(100 * data.distribution[star - 1] / max) + "%" })),
+    h("span", { class: "small num", text: String(data.distribution[star - 1]) }))));
+  const ev = data.event;
+  $("drawer-body").replaceChildren(
+    h("div", { class: "tiles", style: "margin-bottom:14px" },
+      h("div", { class: "tile" }, h("div", { class: "label", text: "Average" }),
+        h("div", { class: "value", text: data.average_rating === null ? "—" : Number(data.average_rating).toFixed(1) }),
+        h("div", { class: "sub stars", text: data.average_rating === null ? "" : starText(data.average_rating) })),
+      h("div", { class: "tile" }, h("div", { class: "label", text: "Ratings" }), h("div", { class: "value", text: data.count }),
+        h("div", { class: "sub", text: "of " + ev.attended_count + " who came" }))),
+    bars,
+    h("div", { class: "section-title" }, h("h3", { text: "Comments" })),
+    data.items.filter((f) => f.comment).length
+      ? h("div", { class: "stack" }, data.items.filter((f) => f.comment).map((f) => h("div", { class: "comment" },
+          h("div", { class: "small" }, h("span", { class: "stars", text: starText(f.rating) }), h("span", { class: "muted", text: " · " + fmt(f.created_at) })),
+          h("div", { text: f.comment }))))
+      : emptyBox(data.count ? "Ratings without comments." : "No ratings yet. Students who were checked in can rate the event in the app after it ends."),
+    h("p", { class: "hint", text: "Anonymous: you see what was said, not who said it." }));
 }
 
 // ---------- boot ----------

@@ -16,7 +16,12 @@ from psycopg.rows import dict_row
 from app.config import Settings
 from app.db import apply_schema
 from app.main import create_app
-from app.security import data_checks_rate_limiter, hash_password, login_rate_limiter
+from app.security import (
+    check_in_rate_limiter,
+    data_checks_rate_limiter,
+    hash_password,
+    login_rate_limiter,
+)
 from app.services.push import PushMessage, SendResult
 
 TEST_DATABASE_URL = os.environ.get(
@@ -72,6 +77,7 @@ def client(
 ) -> Iterator[TestClient]:
     login_rate_limiter.reset()
     data_checks_rate_limiter.reset()
+    check_in_rate_limiter.reset()
     with TestClient(create_app(settings, push)) as test_client:
         yield test_client
 

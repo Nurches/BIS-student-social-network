@@ -4,6 +4,7 @@
 #   bash docs/team/akbota/run_checks.sh                 # live server
 #   API=http://localhost:8000 bash docs/team/akbota/run_checks.sh
 #
+# Week 12: S-10…S-13 added (community requests, cancel / reschedule).
 # Read only and safe to run twice: nothing is created or changed, except the
 # optional lockout check, which locks zhanel@kbtu.kz (and only her) for 15 minutes.
 # The demo password is asked at run time and never stored or printed.
@@ -143,6 +144,43 @@ echo "$schema" | grep -q '"password_hash"' && leaks+="openapi "
   echo "password or bcrypt hash found in: ${leaks:-nothing}"; } | save S-08_no_password.txt "No password in any answer"
 [[ -z "$leaks" ]] && result S-08 "3, 6: password never returned" Pass "login, feed and API schema contain no password or hash" \
                   || result S-08 "3, 6: password never returned" Fail "found in: $leaks"
+
+# ---------- Week 12: community requests and event changes (schema v4) ----------
+# Read only as well: every request below must be REFUSED, so nothing is created.
+# Debate Society (id 3 in the seed) is a pending request of akbota@kbtu.kz.
+login=$(call POST /api/v1/auth/login -H 'Content-Type: application/json' \
+        -d "{\"email\":\"$STUDENT\",\"password\":\"$PASSWORD\"}")
+token=$(json_field "$(body_of "$login")" token)
+AUTH=(-H "Authorization: Bearer $token" -H 'Content-Type: application/json')
+
+# S-10 only a moderator reviews a request (threat: self-approval / approval by a student)
+r=$(call POST /api/v1/admin/communities/3/approve "${AUTH[@]}")
+echo "POST /admin/communities/3/approve as $STUDENT -> $r" | save S-10_student_approve.txt "A student cannot approve a request"
+[[ "$(status_of "$r")" == 403 ]] \
+  && result S-10 "W12: only a moderator approves" Pass "student -> 403 $(json_field "$(body_of "$r")" error)" \
+  || result S-10 "W12: only a moderator approves" Fail "student got $(status_of "$r")"
+
+# S-11 nobody cancels someone else's event (threat: cancelling others' events)
+r=$(call POST /api/v1/admin/events/1/cancel "${AUTH[@]}")
+echo "POST /admin/events/1/cancel as $STUDENT -> $r" | save S-11_cancel_foreign.txt "A student cannot cancel another community's event"
+[[ "$(status_of "$r")" == 403 ]] \
+  && result S-11 "W12: owner/moderator cancels" Pass "student -> 403 $(json_field "$(body_of "$r")" error), event untouched" \
+  || result S-11 "W12: owner/moderator cancels" Fail "student got $(status_of "$r")"
+
+# S-12 a pending request is invisible: it cannot be followed
+r=$(call PUT /api/v1/communities/3/subscription "${AUTH[@]}")
+echo "PUT /communities/3/subscription as $STUDENT -> $r" | save S-12_follow_pending.txt "A pending community cannot be followed"
+[[ "$(status_of "$r")" == 404 && "$r" == *community_not_found* ]] \
+  && result S-12 "W12: pending is not public" Pass "follow pending -> 404 community_not_found" \
+  || result S-12 "W12: pending is not public" Fail "follow pending -> $(status_of "$r")"
+
+# S-13 request spam: a taken name is refused, ignoring case (limit of 3: server test)
+r=$(call POST /api/v1/communities "${AUTH[@]}" -d '{"name":"it club"}')
+echo "POST /communities {name: it club} as $STUDENT -> $r" | save S-13_name_taken.txt "A taken community name is refused"
+[[ "$(status_of "$r")" == 409 && "$r" == *community_name_taken* ]] \
+  && result S-13 "W12: unique names, 3 pending max" Pass "'it club' -> 409 community_name_taken, nothing created" \
+  || result S-13 "W12: unique names, 3 pending max" Fail "'it club' -> $(status_of "$r")"
+unset AUTH
 
 # ---------- S-09 lockout after 5 failed logins (decision 4) — optional ----------
 echo

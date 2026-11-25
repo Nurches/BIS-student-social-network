@@ -27,12 +27,16 @@ GROUP BY student_id, event_id
 HAVING COUNT(*) > 1;
 
 -- @check C03
--- @title No duplicate notification per student, event and kind
+-- @title No duplicate notification per student, target and kind
 -- @requirement FR-01
 -- @sensitive false
-SELECT student_id, event_id, kind, COUNT(*) AS copies
+-- community_approved has no event. Two approvals are two communities, so an empty event_id is replaced by the community.
+SELECT student_id,
+       COALESCE(event_id, -community_id) AS target_id,
+       kind,
+       COUNT(*) AS copies
 FROM notification
-GROUP BY student_id, event_id, kind
+GROUP BY student_id, COALESCE(event_id, -community_id), kind
 HAVING COUNT(*) > 1;
 
 -- @check C04
@@ -84,22 +88,67 @@ FROM student
 WHERE password_hash NOT LIKE '$2b$12$%';
 
 -- @check C09
--- @title Notifications point only to published events
+-- @title A notice on an unpublished event is a cancellation or history
 -- @requirement FR-01
 -- @sensitive false
-SELECT n.notification_id, n.event_id, e.status
+-- event_cancelled points at a cancelled event on purpose. Notices sent before the cancellation stay. A row here is a new notice about a draft, or one created after the event was cancelled.
+SELECT n.notification_id, n.event_id, n.kind, e.status
 FROM notification n
 JOIN event e ON e.event_id = n.event_id
-WHERE e.status <> 'published';
+WHERE e.status <> 'published'
+  AND n.kind <> 'event_cancelled'
+  AND (e.cancelled_at IS NULL OR n.created_at > e.cancelled_at);
 
 -- @check C10
--- @title Nobody holds an active registration for an unpublished event
+-- @title Nobody holds an active registration for a draft event
 -- @requirement FR-03
 -- @sensitive false
--- Only a published event takes registrations; a row here is a draft or cancelled event with confirmed or waiting students.
+-- A cancelled event keeps its registrations for the record. A row here is a draft with a confirmed or waiting student.
 SELECT r.registration_id, r.student_id, e.event_id, e.title,
        e.status AS event_status, r.status AS registration_status
 FROM registration r
 JOIN event e ON e.event_id = r.event_id
 WHERE r.status IN ('confirmed', 'waiting_list')
-  AND e.status <> 'published';
+  AND e.status = 'draft';
+
+-- @check C11
+-- @title A community that is not confirmed has no published event
+-- @requirement BR-01
+-- @sensitive false
+-- FR-04. pending and rejected cannot publish. Same rule as C05, read from status.
+SELECT e.event_id, e.title, c.name AS community, c.status
+FROM event e
+JOIN community c ON c.community_id = e.community_id
+WHERE e.status = 'published'
+  AND c.status <> 'confirmed';
+
+-- @check C12
+-- @title No student owns more than 3 pending communities
+-- @requirement FR-04
+-- @sensitive false
+-- The limit covers many rows of one student, so a CHECK constraint cannot express it.
+SELECT s.student_id, s.email, COUNT(*) AS pending_requests
+FROM community c
+JOIN student s ON s.student_id = c.owner_id
+WHERE c.status = 'pending'
+  AND c.deleted_at IS NULL
+GROUP BY s.student_id, s.email
+HAVING COUNT(*) > 3;
+
+-- @check C13
+-- @title Everyone registered for a cancelled event was notified
+-- @requirement FR-05
+-- @sensitive false
+-- confirmed and waiting_list students must have an event_cancelled notice. A missing row means they were not told.
+SELECT r.registration_id, r.student_id, e.event_id, e.title
+FROM registration r
+JOIN event e ON e.event_id = r.event_id
+WHERE e.status = 'cancelled'
+  AND r.status IN ('confirmed', 'waiting_list')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM notification n
+      WHERE n.student_id = r.student_id
+        AND n.event_id = e.event_id
+        AND n.kind = 'event_cancelled'
+  );

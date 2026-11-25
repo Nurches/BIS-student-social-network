@@ -11,3 +11,4 @@ google-auth==2.62.1
 requests==2.34.2
 httpx==0.28.1
 tzdata==2026.6
+pillow==13.0.0  # v5: posters are checked and re-encoded (EXIF/GPS removed)

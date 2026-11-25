@@ -15,6 +15,10 @@ Week 12 (schema v4): a moderator approves or rejects community requests
 (approval pushes `community_approved` to the owner); cancelling or moving an
 event pushes `event_cancelled` / `event_rescheduled` to every student who is
 confirmed or waiting.
+
+Week 13 (schema v5): posters (FR-08), check-in at the door (FR-06), "Finish
+now", the feedback of an event (FR-07) and attendance analytics. Every one of
+them follows the rule of editing an event: its community's owner or a moderator.
 """
 
 from dataclasses import dataclass
@@ -24,10 +28,17 @@ from psycopg import errors as pg_errors
 
 from ..db import Conn
 from ..errors import ApiError
-from .events import create_publish_notifications
+from ..security import check_in_rate_limiter
+from . import tickets
+from .attendance import check_in_window
+from .events import EVENT_END_SQL, POSTER_URL_SQL, create_publish_notifications
+from .posters import Poster
 from .push import LoggingPushSender, PushMessage, PushSender, SendResult
 
 EVENTS_LIMIT = 300
+ANALYTICS_LIMIT = 300
+FEEDBACK_LIMIT = 500
+CHECK_IN_ATTEMPTS_PER_MINUTE = 60  # per organiser: guessing codes is pointless
 NOTIFICATIONS_LIMIT = 200
 STUDENTS_LIMIT = 300
 
@@ -326,16 +337,25 @@ def reject_community(conn: Conn, admin: Admin, community_id: int, reason: str | 
 
 # ---------- events ----------
 
-_EVENT_SELECT = """
+_EVENT_SELECT = f"""
 SELECT e.event_id, e.community_id, c.name AS community_name, e.title, e.description,
        e.location, e.starts_at, e.registration_deadline, e.participant_limit, e.status,
        e.created_at, e.previous_starts_at, e.cancelled_at,
+       {EVENT_END_SQL} AS ends_at,
        CASE
            WHEN e.status <> 'published' THEN e.status
-           WHEN e.starts_at <= NOW() THEN 'finished'
+           WHEN {EVENT_END_SQL} <= NOW() THEN 'finished'
+           WHEN e.starts_at <= NOW() THEN 'live'
            WHEN e.registration_deadline <= NOW() THEN 'closed'
            ELSE 'open'
        END AS state,
+       {POSTER_URL_SQL} AS poster_url,
+       (SELECT COUNT(*) FROM registration r
+        WHERE r.event_id = e.event_id AND r.status = 'confirmed'
+          AND r.checked_in_at IS NOT NULL) AS attended_count,
+       (SELECT COUNT(*) FROM event_feedback f WHERE f.event_id = e.event_id) AS feedback_count,
+       (SELECT ROUND(AVG(f.rating), 2) FROM event_feedback f
+        WHERE f.event_id = e.event_id) AS average_rating,
        (SELECT COUNT(*) FROM registration r
         WHERE r.event_id = e.event_id AND r.status = 'confirmed') AS confirmed_count,
        (SELECT COUNT(*) FROM registration r
@@ -345,7 +365,7 @@ SELECT e.event_id, e.community_id, c.name AS community_name, e.title, e.descript
         WHERE n.event_id = e.event_id AND n.sent_at IS NOT NULL) AS sent_count
 FROM event e
 JOIN community c ON c.community_id = e.community_id
-"""
+"""  # noqa: S608 — constants only
 
 
 def list_events(conn: Conn, admin: Admin, community_id: int | None) -> dict:
@@ -374,8 +394,9 @@ def _managed_event(conn: Conn, admin: Admin, event_id: int, *, lock: bool = Fals
     """The event row (locked for a change) if the caller may manage it."""
     row = conn.execute(
         f"""
-        SELECT e.event_id, e.status, e.starts_at, e.registration_deadline,
-               e.participant_limit, c.owner_id
+        SELECT e.event_id, e.title, e.status, e.starts_at, e.registration_deadline,
+               e.participant_limit, e.ends_at AS own_end, {EVENT_END_SQL} AS ends_at,
+               c.owner_id, c.status AS community_status
         FROM event e JOIN community c ON c.community_id = e.community_id
         WHERE e.event_id = %s {"FOR UPDATE OF e" if lock else ""}
         """,  # noqa: S608 — a fixed fragment only
@@ -395,6 +416,7 @@ _EDITABLE_EVENT_FIELDS = (
     "starts_at",
     "registration_deadline",
     "participant_limit",
+    "ends_at",
 )
 
 
@@ -436,6 +458,9 @@ def update_event(
         event = _managed_event(conn, admin, event_id, lock=True)
         if event["status"] == "cancelled":
             raise ApiError(409, "event_cancelled")
+        if event["ends_at"] <= datetime.now(UTC) and {"starts_at", "ends_at"} & set(changes):
+            # v5: after the end, check-ins and ratings belong to these times.
+            raise ApiError(409, "event_already_finished")
 
         deadline = changes.get("registration_deadline", event["registration_deadline"])
         starts_at = changes.get("starts_at", event["starts_at"])
@@ -447,6 +472,13 @@ def update_event(
             raise ApiError(422, "start_in_the_past")
         if deadline > starts_at:
             raise ApiError(422, "deadline_after_event_start")
+        # v5: an own end moves with the start (same length), unless a new one is sent.
+        ends_at = changes.get("ends_at", event["own_end"])
+        if moved and "ends_at" not in changes and event["own_end"] is not None:
+            ends_at = event["own_end"] + (starts_at - event["starts_at"])
+            changes = {**changes, "ends_at": ends_at}
+        if ends_at is not None and ends_at <= starts_at:
+            raise ApiError(422, "end_before_start")
 
         confirmed = conn.execute(
             "SELECT COUNT(*) AS n FROM registration WHERE event_id = %s AND status = 'confirmed'",
@@ -548,6 +580,7 @@ def registrations(conn: Conn, admin: Admin, event_id: int) -> dict:
     rows = conn.execute(
         """
         SELECT r.registration_id, s.student_id, s.email, s.full_name, r.status,
+               r.checked_in_at,
                CASE WHEN r.status = 'waiting_list' THEN
                    ROW_NUMBER() OVER (PARTITION BY r.status
                                       ORDER BY r.updated_at, r.registration_id)
@@ -562,6 +595,298 @@ def registrations(conn: Conn, admin: Admin, event_id: int) -> dict:
         (event_id,),
     ).fetchall()
     return {"event": _event(conn, event_id), "items": rows}
+
+
+# ---------- posters (Week 13, FR-08) ----------
+
+
+def save_poster(conn: Conn, admin: Admin, event_id: int, poster: Poster) -> dict:
+    """Uploads or replaces the poster of an event the caller manages. The image
+    was checked and re-encoded by services/posters.py before it gets here."""
+    with conn.transaction():
+        event = _managed_event(conn, admin, event_id, lock=True)
+        if event["status"] == "cancelled":
+            raise ApiError(409, "event_cancelled")
+        if event["community_status"] != "confirmed":
+            raise ApiError(409, "community_not_confirmed")
+        row = conn.execute(
+            """
+            INSERT INTO event_poster (event_id, mime, size_bytes, width, height, data,
+                                      uploaded_by, uploaded_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, clock_timestamp())
+            ON CONFLICT (event_id) DO UPDATE
+            SET mime = EXCLUDED.mime, size_bytes = EXCLUDED.size_bytes,
+                width = EXCLUDED.width, height = EXCLUDED.height, data = EXCLUDED.data,
+                uploaded_by = EXCLUDED.uploaded_by, uploaded_at = EXCLUDED.uploaded_at
+            RETURNING event_id, mime, size_bytes, width, height, uploaded_at
+            """,
+            (
+                event_id,
+                poster.mime,
+                len(poster.data),
+                poster.width,
+                poster.height,
+                poster.data,
+                admin.student_id,
+            ),
+        ).fetchone()
+        assert row is not None
+        return {**row, "poster_url": _poster_url(conn, event_id)}
+
+
+def _poster_url(conn: Conn, event_id: int) -> str | None:
+    row = conn.execute(
+        f"SELECT {POSTER_URL_SQL} AS url FROM event e WHERE e.event_id = %s",  # noqa: S608 — constant
+        (event_id,),
+    ).fetchone()
+    return row["url"] if row else None
+
+
+def delete_poster(conn: Conn, admin: Admin, event_id: int) -> None:
+    """The owner removes the poster of an own event; a moderator removes any
+    (Akbota's threat: an inappropriate poster)."""
+    _managed_event(conn, admin, event_id)
+    row = conn.execute(
+        "DELETE FROM event_poster WHERE event_id = %s RETURNING event_id", (event_id,)
+    ).fetchone()
+    if row is None:
+        raise ApiError(404, "poster_not_found")
+
+
+# ---------- check-in at the door (Week 13, FR-06) ----------
+
+
+def _ticket_registration(conn: Conn, secret: str, event_id: int, ticket: str) -> dict:
+    """The registration a scanned QR or a typed code points to (locked)."""
+    if tickets.looks_like_payload(ticket):
+        registration_id = tickets.registration_from_payload(secret, ticket)
+        if registration_id is None:
+            raise ApiError(422, "invalid_ticket")  # forged or damaged QR
+    else:
+        typed = tickets.normalize_code(ticket)
+        if len(typed) != tickets.CODE_LENGTH:
+            raise ApiError(422, "invalid_ticket")
+        candidates = conn.execute(
+            "SELECT registration_id FROM registration WHERE event_id = %s", (event_id,)
+        ).fetchall()
+        matches = [
+            r["registration_id"]
+            for r in candidates
+            if tickets.code(secret, r["registration_id"]) == typed
+        ]
+        if not matches:
+            raise ApiError(422, "invalid_ticket")
+        registration_id = matches[0]
+    row = conn.execute(
+        """
+        SELECT r.registration_id, r.event_id, r.status, r.checked_in_at,
+               s.student_id, s.full_name, s.email
+        FROM registration r JOIN student s ON s.student_id = r.student_id
+        WHERE r.registration_id = %s
+        FOR UPDATE OF r
+        """,
+        (registration_id,),
+    ).fetchone()
+    if row is None:
+        raise ApiError(422, "invalid_ticket")
+    if row["event_id"] != event_id:
+        raise ApiError(409, "ticket_other_event")  # a real ticket, but for another event
+    return row
+
+
+def check_in(conn: Conn, admin: Admin, secret: str, event_id: int, ticket: str) -> dict:
+    """Checks a student in once, from the QR payload or the 6-character code.
+
+    Only a confirmed place gets in (not the waiting list), only on an event the
+    caller manages, only while the door is open: from 3 hours before the start
+    to 2 hours after the end."""
+    wait = check_in_rate_limiter.hit(f"admin:{admin.student_id}", CHECK_IN_ATTEMPTS_PER_MINUTE)
+    if wait is not None:
+        raise ApiError(
+            429, "too_many_requests", headers={"Retry-After": str(max(1, int(wait) + 1))}
+        )
+    with conn.transaction():
+        event = _managed_event(conn, admin, event_id, lock=True)
+        if event["status"] == "cancelled":
+            raise ApiError(409, "event_cancelled")
+        if event["status"] != "published":
+            raise ApiError(404, "event_not_found")
+        # The ticket first: a forged one is refused whatever the time.
+        registration = _ticket_registration(conn, secret, event_id, ticket)
+        opens, closes = check_in_window(event["starts_at"], event["ends_at"])
+        now = datetime.now(UTC)
+        if now < opens:
+            raise ApiError(409, "check_in_not_open", opens_at=opens.isoformat())
+        if now > closes:
+            raise ApiError(410, "check_in_closed")
+        if registration["status"] != "confirmed":
+            raise ApiError(409, "ticket_not_confirmed")  # waiting list or cancelled
+        if registration["checked_in_at"] is not None:
+            # A screenshot of a ticket shown a second time.
+            raise ApiError(
+                409,
+                "already_checked_in",
+                checked_in_at=registration["checked_in_at"].isoformat(),
+                student_name=registration["full_name"],
+            )
+        row = conn.execute(
+            "UPDATE registration SET checked_in_at = clock_timestamp(), checked_in_by = %s "
+            "WHERE registration_id = %s RETURNING checked_in_at",
+            (admin.student_id, registration["registration_id"]),
+        ).fetchone()
+        assert row is not None
+        counts = conn.execute(
+            "SELECT COUNT(*) FILTER (WHERE checked_in_at IS NOT NULL) AS attended, "
+            "COUNT(*) AS confirmed FROM registration WHERE event_id = %s AND status = 'confirmed'",
+            (event_id,),
+        ).fetchone()
+        assert counts is not None
+        return {
+            "registration_id": registration["registration_id"],
+            "student_id": registration["student_id"],
+            "full_name": registration["full_name"],
+            "email": registration["email"],
+            "checked_in_at": row["checked_in_at"],
+            "attended_count": counts["attended"],
+            "confirmed_count": counts["confirmed"],
+        }
+
+
+def finish_event(conn: Conn, admin: Admin, event_id: int) -> dict:
+    """ "Finish now": the event ends at once, so feedback opens (FR-07).
+    Only after the start, and only once."""
+    with conn.transaction():
+        event = _managed_event(conn, admin, event_id, lock=True)
+        if event["status"] == "cancelled":
+            raise ApiError(409, "event_cancelled")
+        if event["status"] != "published":
+            raise ApiError(404, "event_not_found")
+        now = datetime.now(UTC)
+        if event["starts_at"] > now:
+            raise ApiError(409, "event_not_started")
+        if event["ends_at"] <= now:
+            raise ApiError(409, "event_already_finished")
+        conn.execute(
+            "UPDATE event SET ends_at = GREATEST(NOW(), starts_at + INTERVAL '1 second') "
+            "WHERE event_id = %s",
+            (event_id,),
+        )
+        return _event(conn, event_id)
+
+
+# ---------- feedback and analytics (Week 13, FR-07) ----------
+
+
+def feedback(conn: Conn, admin: Admin, event_id: int) -> dict:
+    """Ratings and comments of one event, newest first. Anonymous on purpose:
+    the organiser sees what was said, not who said it."""
+    _managed_event(conn, admin, event_id)
+    rows = conn.execute(
+        f"""
+        SELECT rating, comment, created_at FROM event_feedback
+        WHERE event_id = %s ORDER BY created_at DESC, feedback_id DESC
+        LIMIT {FEEDBACK_LIMIT}
+        """,  # noqa: S608 — a constant only
+        (event_id,),
+    ).fetchall()
+    summary = conn.execute(
+        """
+        SELECT COUNT(*) AS count, ROUND(AVG(rating), 2) AS average,
+               COUNT(*) FILTER (WHERE rating = 1) AS r1, COUNT(*) FILTER (WHERE rating = 2) AS r2,
+               COUNT(*) FILTER (WHERE rating = 3) AS r3, COUNT(*) FILTER (WHERE rating = 4) AS r4,
+               COUNT(*) FILTER (WHERE rating = 5) AS r5
+        FROM event_feedback WHERE event_id = %s
+        """,
+        (event_id,),
+    ).fetchone()
+    assert summary is not None
+    return {
+        "event": _event(conn, event_id),
+        "count": summary["count"],
+        "average_rating": summary["average"],
+        "distribution": [summary[f"r{i}"] for i in range(1, 6)],
+        "items": rows,
+    }
+
+
+def _rate(part: int, whole: int) -> float | None:
+    return round(100 * part / whole, 1) if whole else None
+
+
+def analytics(conn: Conn, admin: Admin) -> dict:
+    """Registered vs attended, no-show % and average rating, per event and
+    per community, for every event that has started. No-show counts only
+    events that ended: a student may still be on the way to a live one."""
+    events = conn.execute(
+        f"""
+        SELECT e.event_id, e.title, e.community_id, c.name AS community_name, e.starts_at,
+               {EVENT_END_SQL} AS ends_at,
+               {EVENT_END_SQL} <= NOW() AS finished,
+               (SELECT COUNT(*) FROM registration r
+                WHERE r.event_id = e.event_id AND r.status = 'confirmed') AS registered,
+               (SELECT COUNT(*) FROM registration r
+                WHERE r.event_id = e.event_id AND r.status = 'confirmed'
+                  AND r.checked_in_at IS NOT NULL) AS attended,
+               (SELECT COUNT(*) FROM event_feedback f
+                WHERE f.event_id = e.event_id) AS feedback_count,
+               (SELECT COALESCE(SUM(f.rating), 0) FROM event_feedback f
+                WHERE f.event_id = e.event_id) AS rating_sum
+        FROM event e
+        JOIN community c ON c.community_id = e.community_id
+        WHERE {_IN_SCOPE}
+          AND e.status = 'published' AND e.deleted_at IS NULL
+          AND e.starts_at <= NOW()
+        ORDER BY e.starts_at DESC, e.event_id DESC
+        LIMIT {ANALYTICS_LIMIT}
+        """,  # noqa: S608 — only fixed fragments are interpolated, values are bound
+        _scope(admin),
+    ).fetchall()
+
+    def summary(rows: list[dict]) -> dict:
+        ended = [r for r in rows if r["finished"]]
+        registered = sum(r["registered"] for r in ended)
+        attended = sum(r["attended"] for r in ended)
+        count = sum(r["feedback_count"] for r in rows)
+        return {
+            "events": len(rows),
+            "finished_events": len(ended),
+            "registered": registered,
+            "attended": attended,
+            "no_show": registered - attended,
+            "no_show_rate": _rate(registered - attended, registered),
+            "attendance_rate": _rate(attended, registered),
+            "feedback_count": count,
+            "average_rating": (
+                round(sum(r["rating_sum"] for r in rows) / count, 2) if count else None
+            ),
+        }
+
+    items = []
+    for r in events:
+        no_show = r["registered"] - r["attended"] if r["finished"] else None
+        items.append(
+            {
+                **{k: v for k, v in r.items() if k != "rating_sum"},
+                "no_show": no_show,
+                "no_show_rate": _rate(no_show, r["registered"]) if no_show is not None else None,
+                "average_rating": (
+                    round(r["rating_sum"] / r["feedback_count"], 2) if r["feedback_count"] else None
+                ),
+            }
+        )
+    by_community: dict[int, list[dict]] = {}
+    names: dict[int, str] = {}
+    for r in events:
+        by_community.setdefault(r["community_id"], []).append(r)
+        names[r["community_id"]] = r["community_name"]
+    communities = sorted(
+        (
+            {"community_id": cid, "community_name": names[cid], **summary(rows)}
+            for cid, rows in by_community.items()
+        ),
+        key=lambda c: c["community_name"],
+    )
+    return {"totals": summary(list(events)), "communities": communities, "events": items}
 
 
 # ---------- notifications and pushes ----------

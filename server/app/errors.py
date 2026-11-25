@@ -54,7 +54,11 @@ ERRORS: dict[str, ErrorDoc] = {
     "not_your_community": ErrorDoc(
         403, "Admin panel: not the owner of this community and not a moderator"
     ),
+    "not_checked_in": ErrorDoc(
+        403, "v5: only a student checked in at the event may rate it (FR-07)"
+    ),
     "event_not_found": ErrorDoc(404, "No such event (students: also a draft or cancelled one)"),
+    "poster_not_found": ErrorDoc(404, "v5: the event has no poster"),
     "community_not_found": ErrorDoc(404, "No such community"),
     "not_registered": ErrorDoc(404, "No active registration of this student"),
     "student_not_found": ErrorDoc(404, "No student with this id or email"),
@@ -68,13 +72,46 @@ ERRORS: dict[str, ErrorDoc] = {
     "community_not_pending": ErrorDoc(
         409, "v4: only a pending request can be approved or rejected"
     ),
+    "already_checked_in": ErrorDoc(
+        409,
+        "v5: this ticket was already used (check-in), or the student is at the event (cancel)",
+        {
+            "error": "already_checked_in",
+            "checked_in_at": "2026-11-27T10:02:11+00:00",
+            "student_name": "Sadykova Aru",
+        },
+    ),
+    "ticket_waiting_list": ErrorDoc(
+        409, "v5: on the waiting list: no ticket until a place is free"
+    ),
+    "ticket_other_event": ErrorDoc(409, "v5: a genuine ticket, but for another event"),
+    "ticket_not_confirmed": ErrorDoc(
+        409, "v5: the ticket's registration is on the waiting list or cancelled"
+    ),
+    "check_in_not_open": ErrorDoc(
+        409,
+        "v5: check-in opens 3 hours before the start",
+        {"error": "check_in_not_open", "opens_at": "2026-11-27T07:00:00+00:00"},
+    ),
+    "event_not_started": ErrorDoc(409, "v5: “Finish now” before the event started"),
+    "event_already_finished": ErrorDoc(409, "v5: the event has already ended"),
+    "event_not_finished": ErrorDoc(409, "v5: feedback opens when the event ends (FR-07)"),
+    "feedback_already_sent": ErrorDoc(409, "v5: one rating per student and event"),
+    "community_not_confirmed": ErrorDoc(
+        409, "v5: a poster only for an event of a confirmed community"
+    ),
     "limit_below_confirmed": ErrorDoc(
         409, "The new participant limit is below the number of confirmed students"
     ),
     "cannot_change_own_role": ErrorDoc(409, "A moderator cannot remove their own role"),
     "deadline_passed": ErrorDoc(410, "FR-02: the registration deadline has passed"),
     "event_started": ErrorDoc(410, "Cancelling (a registration or the event) after it started"),
+    "check_in_closed": ErrorDoc(410, "v5: check-in closed 2 hours after the end"),
     "payload_too_large": ErrorDoc(413, "Body over 64 KB, refused before parsing"),
+    "poster_too_large": ErrorDoc(413, "v5: the image is over 2 MB, refused before it is read"),
+    "unsupported_poster_type": ErrorDoc(
+        415, "v5: not a JPEG, PNG or WebP by its first bytes (the file name does not count)"
+    ),
     "validation_failed": ErrorDoc(
         422,
         "The body, path or query does not match the contract",
@@ -92,6 +129,13 @@ ERRORS: dict[str, ErrorDoc] = {
     "deadline_in_the_past": ErrorDoc(422, "FR-02: the registration deadline is in the past"),
     "deadline_after_event_start": ErrorDoc(422, "The deadline is after `starts_at`"),
     "start_in_the_past": ErrorDoc(422, "v4: a moved event must still start in the future"),
+    "end_before_start": ErrorDoc(422, "v5: `ends_at` is not after `starts_at`"),
+    "invalid_ticket": ErrorDoc(
+        422, "v5: not a ticket of this server (forged QR) or no such code for this event"
+    ),
+    "poster_unreadable": ErrorDoc(
+        422, "v5: the image is damaged or over 40 megapixels (a decompression bomb)"
+    ),
     "account_locked": ErrorDoc(
         423,
         "NFR-02: 5 wrong passwords in 10 min lock the account for 15 min, "

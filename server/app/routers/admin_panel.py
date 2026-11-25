@@ -11,11 +11,16 @@ from ..errors import error_responses
 from ..schemas import (
     AdminCommunityOut,
     AdminEventListResponse,
+    AdminEventOut,
+    AdminFeedbackResponse,
     AdminMeOut,
     AdminNotificationsResponse,
     AdminOverviewOut,
     AdminRegistrationsResponse,
     AdminStudentsResponse,
+    AnalyticsResponse,
+    CheckInOut,
+    CheckInRequest,
     CommunityCreateRequest,
     CommunityRejectRequest,
     CommunityReviewOut,
@@ -26,10 +31,11 @@ from ..schemas import (
     EventUpdateRequest,
     ModeratorRoleRequest,
     NotifyOut,
+    PosterOut,
     PushTestOut,
 )
 from ..security import CurrentStudent, current_student
-from ..services import admin_panel
+from ..services import admin_panel, posters
 from ..services.admin_panel import Admin
 from . import schedule_push
 
@@ -225,6 +231,8 @@ def events(
         "deadline_in_the_past",
         "deadline_after_event_start",
         "start_in_the_past",
+        "end_before_start",
+        "event_already_finished",
         "timestamp_without_offset",
         "payload_too_large",
     ),
@@ -303,6 +311,133 @@ def registrations(
 ) -> dict:
     with pool.connection() as conn:
         return admin_panel.registrations(conn, admin, event_id)
+
+
+# ---------- Week 13 (schema v5): posters, check-in, feedback, analytics ----------
+
+
+@router.put(
+    "/events/{event_id}/poster",
+    response_model=PosterOut,
+    summary="Upload or replace the poster: the raw image is the body (FR-08)",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                t: {"schema": {"type": "string", "format": "binary"}}
+                for t in ("image/jpeg", "image/png", "image/webp")
+            },
+        }
+    },
+    responses=error_responses(
+        *_EVENT,
+        "event_cancelled",
+        "community_not_confirmed",
+        "poster_too_large",
+        "unsupported_poster_type",
+        "poster_unreadable",
+    ),
+)
+async def upload_poster(
+    event_id: int,
+    request: Request,
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
+) -> dict:
+    """JPEG, PNG or WebP up to 2 MB, recognised by its first bytes. The server
+    turns the photo upright, scales it to at most 1600 px and saves it again,
+    so EXIF and GPS data never reach the students."""
+    body = await request.body()
+    poster = posters.process(body)
+    with pool.connection() as conn:
+        return admin_panel.save_poster(conn, admin, event_id, poster)
+
+
+@router.delete(
+    "/events/{event_id}/poster",
+    status_code=204,
+    summary="Remove the poster (the owner: own events; a moderator: any)",
+    responses=error_responses(*_EVENT, "poster_not_found"),
+)
+def delete_poster(
+    event_id: int, admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)
+) -> Response:
+    with pool.connection() as conn:
+        admin_panel.delete_poster(conn, admin, event_id)
+    return Response(status_code=204)
+
+
+@router.post(
+    "/events/{event_id}/check-in",
+    response_model=CheckInOut,
+    summary="Check a student in at the door: scanned QR text or 6-character code (FR-06)",
+    responses=error_responses(
+        *_EVENT,
+        "event_cancelled",
+        "check_in_not_open",
+        "check_in_closed",
+        "invalid_ticket",
+        "ticket_other_event",
+        "ticket_not_confirmed",
+        "already_checked_in",
+        "too_many_requests",
+        "payload_too_large",
+    ),
+)
+def check_in(
+    event_id: int,
+    body: CheckInRequest,
+    request: Request,
+    admin: Admin = Depends(current_admin),
+    pool: Pool = Depends(get_pool),
+) -> dict:
+    """Once per ticket. Opens 3 hours before the start, closes 2 hours after
+    the end. A waiting-list student has no place and is refused."""
+    with pool.connection() as conn:
+        return admin_panel.check_in(
+            conn, admin, request.app.state.settings.jwt_secret, event_id, body.ticket
+        )
+
+
+@router.post(
+    "/events/{event_id}/finish",
+    response_model=AdminEventOut,
+    summary="Finish now: the event ends at once and feedback opens",
+    responses=error_responses(
+        *_EVENT, "event_cancelled", "event_not_started", "event_already_finished"
+    ),
+)
+def finish(
+    event_id: int, admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)
+) -> dict:
+    with pool.connection() as conn:
+        return admin_panel.finish_event(conn, admin, event_id)
+
+
+@router.get(
+    "/events/{event_id}/feedback",
+    response_model=AdminFeedbackResponse,
+    summary="Ratings and comments of an event, anonymous (FR-07)",
+    responses=error_responses(*_EVENT),
+)
+def event_feedback(
+    event_id: int, admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)
+) -> dict:
+    with pool.connection() as conn:
+        return admin_panel.feedback(conn, admin, event_id)
+
+
+@router.get(
+    "/analytics",
+    response_model=AnalyticsResponse,
+    summary="Registered vs attended, no-show % and ratings per event and community",
+    responses=error_responses(*_ADMIN),
+)
+def analytics(admin: Admin = Depends(current_admin), pool: Pool = Depends(get_pool)) -> dict:
+    """Moderator: every community; owner: own. Events that started; no-show
+    only for the ones that ended."""
+    with pool.connection() as conn:
+        return admin_panel.analytics(conn, admin)
 
 
 # ---------- notifications and pushes ----------
