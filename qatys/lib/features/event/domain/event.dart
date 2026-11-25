@@ -22,7 +22,12 @@ class Event {
     this.status = EventStatus.published,
     this.previousStartsAt,
     this.cancelledAt,
-  });
+    DateTime? endsAt,
+    this.posterUrl,
+    this.checkedInAt,
+    this.myRating,
+    this.feedbackOpen = false,
+  }) : _endsAt = endsAt;
 
   final int id;
   final int communityId;
@@ -47,6 +52,32 @@ class Event {
   /// The start before the organiser last moved the event; null if never moved.
   final DateTime? previousStartsAt;
   final DateTime? cancelledAt;
+
+  final DateTime? _endsAt;
+
+  /// Week 13: when the event ends. The server sends it; an older server or
+  /// cache has none, then it is two hours after the start (as on the server).
+  DateTime get endsAt => _endsAt ?? startsAt.add(const Duration(hours: 2));
+
+  /// Path of the poster image on the API host (`/api/v1/events/{id}/poster?v=…`),
+  /// null without a poster: the community's colours are shown instead.
+  final String? posterUrl;
+
+  /// When the organiser checked the student in at the door (FR-06).
+  final DateTime? checkedInAt;
+
+  /// The student's own rating 1–5, once sent (FR-07).
+  final int? myRating;
+
+  /// Server-computed: checked in, the event ended, not rated yet. The client
+  /// shows the "Rate this event" button only then.
+  final bool feedbackOpen;
+
+  bool get isCheckedIn => checkedInAt != null;
+
+  bool get hasPoster => posterUrl != null;
+
+  bool hasEnded(DateTime now) => !now.isBefore(endsAt);
 
   bool get isFull => freePlaces <= 0;
 

@@ -1,5 +1,7 @@
 import 'event.dart';
+import 'feedback_result.dart';
 import 'registration_result.dart';
+import 'ticket.dart';
 
 /// Access to events and registrations.
 ///
@@ -27,4 +29,16 @@ abstract interface class EventRepository {
   /// Events the student is confirmed for or waiting for, past ones included
   /// (`GET /me/registrations`).
   Future<List<Event>> fetchMyEvents();
+
+  /// Week 13 (FR-06): the QR and the code of a confirmed place
+  /// (`GET /events/{id}/ticket`).
+  Future<TicketResult> fetchTicket(int eventId);
+
+  /// Week 13 (FR-07): rate an event the student attended, once, after it
+  /// ended (`POST /events/{id}/feedback`).
+  Future<FeedbackResult> sendFeedback(
+    int eventId, {
+    required int rating,
+    String? comment,
+  });
 }

@@ -59,3 +59,8 @@ final class CancelEventStarted extends CancelResult {
 final class CancelEventCancelled extends CancelResult {
   const CancelEventCancelled();
 }
+
+/// 409 `already_checked_in` (Week 13): the student is already at the event.
+final class CancelAlreadyCheckedIn extends CancelResult {
+  const CancelAlreadyCheckedIn();
+}

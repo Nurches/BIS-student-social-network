@@ -2,7 +2,9 @@ import '../../../core/network/api_client.dart';
 import '../../../core/network/api_exception.dart';
 import '../domain/event.dart';
 import '../domain/event_repository.dart';
+import '../domain/feedback_result.dart';
 import '../domain/registration_result.dart';
+import '../domain/ticket.dart';
 import 'event_json.dart';
 
 /// [EventRepository] backed by the FastAPI server (docs/api.md).
@@ -66,6 +68,8 @@ class HttpEventRepository implements EventRepository {
       410 => const CancelEventStarted(),
       409 when _errorCode(response) == 'event_cancelled' =>
         const CancelEventCancelled(),
+      409 when _errorCode(response) == 'already_checked_in' =>
+        const CancelAlreadyCheckedIn(),
       _ => throw _unexpected(response),
     };
   }
@@ -75,6 +79,40 @@ class HttpEventRepository implements EventRepository {
     final response = await _api.get('/me/registrations');
     _expect(response, 200);
     return _parse(() => eventListFromJson(response.json));
+  }
+
+  @override
+  Future<TicketResult> fetchTicket(int eventId) async {
+    final response = await _api.get('/events/$eventId/ticket');
+    return switch ((response.statusCode, _errorCode(response))) {
+      (200, _) => TicketReady(_parse(() => ticketFromJson(response.json))),
+      (409, 'ticket_waiting_list') => const TicketWaitingList(),
+      (409, 'event_cancelled') => const TicketEventCancelled(),
+      (404, 'not_registered') => const TicketNotRegistered(),
+      (404, _) => throw NotFoundException('Event $eventId not found'),
+      _ => throw _unexpected(response),
+    };
+  }
+
+  @override
+  Future<FeedbackResult> sendFeedback(
+    int eventId, {
+    required int rating,
+    String? comment,
+  }) async {
+    final response = await _api.post(
+      '/events/$eventId/feedback',
+      body: {'rating': rating, 'comment': ?comment},
+    );
+    return switch ((response.statusCode, _errorCode(response))) {
+      (201, _) => FeedbackSent(rating),
+      (403, 'not_checked_in') => const FeedbackNotCheckedIn(),
+      (409, 'event_not_finished') => const FeedbackTooEarly(),
+      (409, 'feedback_already_sent') => const FeedbackAlreadySent(),
+      (409, 'event_cancelled') => const FeedbackEventCancelled(),
+      (404, _) => throw NotFoundException('Event $eventId not found'),
+      _ => throw _unexpected(response),
+    };
   }
 
   String? _errorCode(ApiResponse response) {

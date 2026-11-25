@@ -5,8 +5,12 @@ import '../../../core/network/api_exception.dart';
 import '../../../core/widgets/ui.dart';
 import '../../feed/presentation/feed_controller.dart';
 import '../../home/presentation/home_tab_controller.dart';
+import '../data/event_repository_provider.dart';
+import '../domain/event.dart';
 import 'event_card.dart';
+import 'feedback_sheet.dart';
 import 'my_events_controller.dart';
+import 'ticket_screen.dart';
 
 /// My events tab: where the student is registered or waiting, upcoming first.
 class MyEventsScreen extends ConsumerWidget {
@@ -49,10 +53,12 @@ class MyEventsScreen extends ConsumerWidget {
                 )
               else ...[
                 for (final (title, list) in [
+                  // Week 13: an event stays "Upcoming" until it ends, so
+                  // the ticket is at hand at the door.
                   (
                     'Upcoming',
                     value
-                        .where((e) => !e.isCancelled && e.startsAt.isAfter(now))
+                        .where((e) => !e.isCancelled && !e.hasEnded(now))
                         .toList(),
                   ),
                   // Week 12: kept, so the student sees why an event is gone.
@@ -60,9 +66,7 @@ class MyEventsScreen extends ConsumerWidget {
                   (
                     'Past',
                     value
-                        .where(
-                          (e) => !e.isCancelled && !e.startsAt.isAfter(now),
-                        )
+                        .where((e) => !e.isCancelled && e.hasEnded(now))
                         .toList(),
                   ),
                 ])
@@ -73,6 +77,7 @@ class MyEventsScreen extends ConsumerWidget {
                         event: event,
                         now: now,
                         onReturn: () => ref.invalidate(myEventsProvider),
+                        footer: _footer(context, ref, event, now),
                       ),
                   ],
               ],
@@ -90,4 +95,77 @@ class MyEventsScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Week 13: the ticket of a confirmed upcoming place, the rating button of
+/// an attended event, the rating already given.
+Widget? _footer(
+  BuildContext context,
+  WidgetRef ref,
+  Event event,
+  DateTime now,
+) {
+  if (event.isCancelled || event.myState != RegistrationState.registered) {
+    return null;
+  }
+  if (event.feedbackOpen) {
+    return FilledButton.tonalIcon(
+      key: ValueKey('rate-${event.id}'),
+      onPressed: () async {
+        final result = await showFeedbackSheet(
+          context,
+          eventTitle: event.title,
+          send: (rating, comment) => ref
+              .read(eventRepositoryProvider)
+              .sendFeedback(event.id, rating: rating, comment: comment),
+        );
+        if (result == null || !context.mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(feedbackMessage(result))));
+        ref.invalidate(myEventsProvider);
+      },
+      icon: const Icon(Icons.star_rounded),
+      label: const Text('Rate this event'),
+    );
+  }
+  if (event.myRating case final rating?) {
+    return Row(
+      key: ValueKey('rated-${event.id}'),
+      children: [
+        const Text(
+          'Your rating ',
+          style: TextStyle(
+            color: Color(0xFFB45309),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        StarRow(rating: rating),
+      ],
+    );
+  }
+  if (event.isCheckedIn) {
+    return const Row(
+      children: [
+        Icon(Icons.verified, size: 18, color: Color(0xFF14532D)),
+        SizedBox(width: 6),
+        Text(
+          'Checked in',
+          style: TextStyle(
+            color: Color(0xFF14532D),
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+  if (event.hasEnded(now)) return null;
+  return OutlinedButton.icon(
+    key: ValueKey('ticket-${event.id}'),
+    onPressed: () => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => TicketScreen(event: event))),
+    icon: const Icon(Icons.qr_code_2),
+    label: const Text('Show ticket'),
+  );
 }

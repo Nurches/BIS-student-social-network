@@ -6,7 +6,9 @@ import '../../sync/domain/pending_action.dart';
 import '../../sync/presentation/pending_actions_controller.dart';
 import '../data/event_repository_provider.dart';
 import '../domain/event.dart';
+import '../domain/feedback_result.dart';
 import '../domain/registration_result.dart';
+import 'feedback_sheet.dart';
 
 class EventDetailState {
   const EventDetailState({
@@ -76,6 +78,31 @@ class EventDetailController extends AsyncNotifier<EventDetailState> {
   }
 
   Future<void> register() => _act(PendingKind.register);
+
+  /// Week 13 (FR-07): sends the rating, then shows the fresh event with the
+  /// server's answer. A missing connection is thrown to the sheet, which
+  /// keeps the stars and the comment so the student can try again.
+  Future<FeedbackResult> sendFeedback(int rating, String? comment) async {
+    final result = await ref
+        .read(eventRepositoryProvider)
+        .sendFeedback(eventId, rating: rating, comment: comment);
+    Event? event;
+    try {
+      event = await _fetch();
+    } on ApiException {
+      // The message below still says what happened.
+    }
+    final current = state.value;
+    if (ref.mounted && current != null) {
+      state = AsyncData(
+        EventDetailState(
+          event: event ?? current.event,
+          message: feedbackMessage(result),
+        ),
+      );
+    }
+    return result;
+  }
 
   Future<void> cancel() => _act(PendingKind.cancel);
 
@@ -189,5 +216,7 @@ class EventDetailController extends AsyncNotifier<EventDetailState> {
       'The event has already started; it can no longer be cancelled.',
     CancelEventCancelled() =>
       'The organiser cancelled the whole event; your place is released.',
+    CancelAlreadyCheckedIn() =>
+      'You are already checked in at this event; the place is yours.',
   };
 }

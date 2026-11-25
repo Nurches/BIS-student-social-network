@@ -11,6 +11,9 @@ import '../../sync/domain/pending_action.dart';
 import '../../sync/presentation/pending_actions_controller.dart';
 import '../domain/event.dart';
 import 'event_detail_controller.dart';
+import 'feedback_sheet.dart';
+import 'poster_image.dart';
+import 'ticket_screen.dart';
 
 /// Brief §7 and §8: the deadline, the free places and the action button fit
 /// on a 320 dp wide phone without scrolling, and the action sits in the
@@ -213,95 +216,124 @@ class _Hero extends StatelessWidget {
     final gradient = event.isCancelled
         ? const LinearGradient(colors: [Color(0xFF6B7280), Color(0xFF374151)])
         : communityGradient(event.communityId);
+    Widget poster = PosterImage(
+      path: event.posterUrl,
+      semanticLabel: 'Poster of ${event.title}',
+      fallback: const SizedBox.shrink(),
+    );
+    if (event.isCancelled) {
+      // A cancelled event keeps its poster, in grey.
+      poster = ColorFiltered(
+        colorFilter: const ColorFilter.matrix([
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0.2126, 0.7152, 0.0722, 0, 0, //
+          0, 0, 0, 1, 0,
+        ]),
+        child: poster,
+      );
+    }
     return Container(
+      key: event.hasPoster ? const ValueKey('hero-poster') : null,
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       decoration: BoxDecoration(
         gradient: gradient,
         borderRadius: BorderRadius.circular(20),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Stack(
+      // Week 13: the poster is a banner above the title, never under it —
+      // text printed on a poster would fight the title.
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Positioned(
-            right: -14,
-            bottom: -20,
-            child: Icon(
-              eventIcon(event.title, event.communityName),
-              size: 120,
-              color: Colors.white.withValues(alpha: 0.12),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // The community opens its own page: follow it from there.
-                InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) =>
-                          CommunityScreen(communityId: event.communityId),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: CommunityAvatar(
-                            communityId: event.communityId,
-                            name: event.communityName,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            event.communityName,
-                            style: theme.textTheme.titleSmall?.copyWith(
-                              color: Colors.white,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const Icon(
-                          Icons.chevron_right,
-                          size: 18,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  event.title,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    height: 1.15,
-                    decoration: event.isCancelled
-                        ? TextDecoration.lineThrough
-                        : null,
-                    decorationColor: Colors.white,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
+          if (event.hasPoster) AspectRatio(aspectRatio: 2.4, child: poster),
+          _heroText(context, theme),
         ],
       ),
     );
   }
+
+  Widget _heroText(BuildContext context, ThemeData theme) => Stack(
+    children: [
+      if (!event.hasPoster)
+        Positioned(
+          right: -14,
+          bottom: -20,
+          child: Icon(
+            eventIcon(event.title, event.communityName),
+            size: 120,
+            color: Colors.white.withValues(alpha: 0.12),
+          ),
+        ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // The community opens its own page: follow it from there.
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      CommunityScreen(communityId: event.communityId),
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: CommunityAvatar(
+                        communityId: event.communityId,
+                        name: event.communityName,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        event.communityName,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: Colors.white,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              event.title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: Colors.white,
+                height: 1.15,
+                decoration: event.isCancelled
+                    ? TextDecoration.lineThrough
+                    : null,
+                decorationColor: Colors.white,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class _Notice extends StatelessWidget {
@@ -476,13 +508,67 @@ class _Action extends ConsumerWidget {
     }
 
     return switch (event.myState) {
+      // Week 13: checked in at the door -> rate it after the end (FR-06, FR-07).
+      RegistrationState.registered when event.checkedInAt != null => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Status(
+            key: const ValueKey('checked-in-status'),
+            icon: Icons.verified,
+            text: 'Checked in at ${formatTime(event.checkedInAt!)}',
+            tone: _Status.confirmed,
+          ),
+          if (event.feedbackOpen) ...[
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              key: const ValueKey('rate-event'),
+              onPressed: busy
+                  ? null
+                  : () => showFeedbackSheet(
+                      context,
+                      eventTitle: event.title,
+                      send: controller.sendFeedback,
+                    ),
+              icon: const Icon(Icons.star_rounded),
+              label: const Text('Rate this event'),
+            ),
+          ] else if (event.myRating case final rating?) ...[
+            const SizedBox(height: 8),
+            _Status(
+              key: const ValueKey('my-rating'),
+              icon: Icons.thumb_up_alt_outlined,
+              text: 'Your rating',
+              tone: _Status.waiting,
+              action: StarRow(rating: rating, size: 22),
+            ),
+          ],
+        ],
+      ),
+      RegistrationState.registered when event.hasEnded(now) => const _Status(
+        key: ValueKey('not-checked-in'),
+        icon: Icons.info_outline,
+        text:
+            'You were not checked in at the door, so this event cannot '
+            'be rated.',
+      ),
       RegistrationState.registered => Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _Status(
+          _Status(
             icon: Icons.check_circle,
             text: 'Registered ✓',
             tone: _Status.confirmed,
+            // Week 13: the ticket for the door, one tap from here.
+            action: FilledButton.tonalIcon(
+              key: const ValueKey('show-ticket'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TicketScreen(event: event),
+                ),
+              ),
+              icon: const Icon(Icons.qr_code_2),
+              label: const Text('Ticket'),
+            ),
           ),
           if (!started) ...[
             const SizedBox(height: 8),
@@ -547,10 +633,19 @@ class _Action extends ConsumerWidget {
 }
 
 class _Status extends StatelessWidget {
-  const _Status({required this.icon, required this.text, this.tone});
+  const _Status({
+    required this.icon,
+    required this.text,
+    this.tone,
+    this.action,
+    super.key,
+  });
 
   final IconData icon;
   final String text;
+
+  /// A button at the end of the row (Week 13: the ticket).
+  final Widget? action;
 
   /// Green for a confirmed place, amber for the waiting list.
   final ({Color background, Color foreground})? tone;
@@ -586,6 +681,7 @@ class _Status extends StatelessWidget {
               style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
             ),
           ),
+          if (action case final action?) ...[const SizedBox(width: 8), action],
         ],
       ),
     );

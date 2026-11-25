@@ -14,7 +14,9 @@ import 'package:qatys/features/event/data/event_repository_provider.dart';
 import 'package:qatys/features/event/data/mock_event_repository.dart';
 import 'package:qatys/features/event/domain/event.dart';
 import 'package:qatys/features/event/domain/event_repository.dart';
+import 'package:qatys/features/event/domain/feedback_result.dart';
 import 'package:qatys/features/event/domain/registration_result.dart';
+import 'package:qatys/features/event/domain/ticket.dart';
 import 'package:qatys/features/push/data/device_token_repository.dart';
 import 'package:qatys/features/push/domain/push_service.dart';
 
@@ -57,6 +59,19 @@ class SwitchableEventRepository implements EventRepository {
 
   @override
   Future<List<Event>> fetchMyEvents() => _call(inner.fetchMyEvents);
+
+  @override
+  Future<TicketResult> fetchTicket(int eventId) =>
+      _call(() => inner.fetchTicket(eventId));
+
+  @override
+  Future<FeedbackResult> sendFeedback(
+    int eventId, {
+    required int rating,
+    String? comment,
+  }) => _call(
+    () => inner.sendFeedback(eventId, rating: rating, comment: comment),
+  );
 }
 
 class FakePushService implements PushService {

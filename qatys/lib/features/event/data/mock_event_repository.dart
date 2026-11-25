@@ -5,7 +5,9 @@ import '../../inbox/domain/app_notification.dart';
 import '../../inbox/domain/notification_repository.dart';
 import '../domain/event.dart';
 import '../domain/event_repository.dart';
+import '../domain/feedback_result.dart';
 import '../domain/registration_result.dart';
+import '../domain/ticket.dart';
 
 /// The in-memory server of mock mode. It behaves like docs/api.md: it owns
 /// `freePlaces`, enforces the limit and the deadline, keeps a waiting list,
@@ -117,6 +119,7 @@ class MockEventRepository
     if (event.myState == RegistrationState.none) {
       return const CancelNotRegistered();
     }
+    if (event.checkedInAt != null) return const CancelAlreadyCheckedIn();
     if (!_now().isBefore(event.startsAt)) return const CancelEventStarted();
 
     switch (event.myState) {
@@ -147,6 +150,58 @@ class MockEventRepository
       for (final e in _events.values)
         if (e.myState != RegistrationState.none) e.toEvent(),
     ]..sort((a, b) => a.startsAt.compareTo(b.startsAt));
+  }
+
+  @override
+  Future<TicketResult> fetchTicket(int eventId) async {
+    await _delay();
+    final event = _find(eventId);
+    if (event.myState == RegistrationState.none) {
+      return const TicketNotRegistered();
+    }
+    if (event.cancelled) return const TicketEventCancelled();
+    if (event.myState == RegistrationState.waitingList) {
+      return const TicketWaitingList();
+    }
+    return TicketReady(
+      Ticket(
+        eventId: eventId,
+        registrationId: 1000 + eventId,
+        code: _mockCode(eventId),
+        qr: 'QATYS-T1.${1000 + eventId}.mock-ticket-not-valid',
+        checkedInAt: event.checkedInAt,
+        checkInOpensAt: event.startsAt.subtract(const Duration(hours: 3)),
+        checkInClosesAt: event.endsAt.add(const Duration(hours: 2)),
+      ),
+    );
+  }
+
+  @override
+  Future<FeedbackResult> sendFeedback(
+    int eventId, {
+    required int rating,
+    String? comment,
+  }) async {
+    await _delay();
+    final event = _find(eventId);
+    if (event.cancelled) return const FeedbackEventCancelled();
+    if (event.checkedInAt == null) return const FeedbackNotCheckedIn();
+    if (_now().isBefore(event.endsAt)) return const FeedbackTooEarly();
+    if (event.myRating != null) return const FeedbackAlreadySent();
+    event.myRating = rating;
+    return FeedbackSent(rating);
+  }
+
+  static String _mockCode(int eventId) {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    // A stable fake code per event (mock mode only; the server signs real ones).
+    var n = (eventId * 2654435761 + 97) % 887503681;
+    final chars = <String>[];
+    for (var i = 0; i < 6; i++) {
+      chars.add(alphabet[n % alphabet.length]);
+      n ~/= alphabet.length;
+    }
+    return chars.join();
   }
 
   // ---------- CommunityRepository ----------
@@ -343,6 +398,26 @@ class MockEventRepository
     }
   }
 
+  /// Demo and test hook (Week 13): the owner uploads a poster in /admin.
+  void setPoster(int eventId, String? path) {
+    _find(eventId).posterUrl = path;
+  }
+
+  /// Demo and test hook (Week 13): the organiser scans the student's ticket.
+  void checkInByOrganiser(int eventId) {
+    _find(eventId).checkedInAt = _now();
+  }
+
+  /// Demo and test hook (Week 13): "Finish now" in /admin; feedback opens.
+  void finishByOrganiser(int eventId) {
+    final event = _find(eventId);
+    final now = _now();
+    if (event.startsAt.isAfter(now)) {
+      event.startsAt = now.subtract(const Duration(hours: 1));
+    }
+    event.endsAt = now;
+  }
+
   /// Demo and test hook: the organiser moves event [eventId] to [startsAt].
   void rescheduleByOrganiser(int eventId, DateTime startsAt) {
     final event = _find(eventId);
@@ -509,7 +584,7 @@ class MockEventRepository
         confirmed: 2,
       ),
     ]) {
-      _events[event.id] = event;
+      _events[event.id] = event..clock = _now;
     }
 
     _inbox.addAll([
@@ -593,6 +668,16 @@ class _MockEvent {
   DateTime? cancelledAt;
   DateTime? previousStartsAt;
 
+  DateTime? _endsAt;
+  DateTime get endsAt => _endsAt ?? startsAt.add(const Duration(hours: 2));
+  set endsAt(DateTime value) => _endsAt = value;
+  DateTime? checkedInAt;
+  int? myRating;
+  String? posterUrl;
+
+  /// The repository's clock, so tests can move time.
+  DateTime Function() clock = DateTime.now;
+
   int confirmed;
   int waiting;
   RegistrationState myState = RegistrationState.none;
@@ -614,5 +699,14 @@ class _MockEvent {
     status: cancelled ? EventStatus.cancelled : EventStatus.published,
     previousStartsAt: previousStartsAt,
     cancelledAt: cancelledAt,
+    endsAt: endsAt,
+    checkedInAt: checkedInAt,
+    myRating: myRating,
+    posterUrl: posterUrl,
+    feedbackOpen:
+        checkedInAt != null &&
+        !cancelled &&
+        myRating == null &&
+        !clock().isBefore(endsAt),
   );
 }

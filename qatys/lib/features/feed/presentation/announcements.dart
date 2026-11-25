@@ -7,6 +7,7 @@ import '../../auth/presentation/session_controller.dart';
 import '../../event/data/event_repository_provider.dart';
 import '../../event/domain/event.dart';
 import '../../event/presentation/event_detail_screen.dart';
+import '../../event/presentation/poster_image.dart';
 import 'feed_controller.dart';
 
 /// Week 12: announcement cards on top of the home screen. Open events of
@@ -154,16 +155,28 @@ class AnnouncementCard extends StatelessWidget {
             ),
             child: Stack(
               children: [
-                // Decoration: a large faded icon in the corner.
-                Positioned(
-                  right: -18,
-                  bottom: -22,
-                  child: Icon(
-                    eventIcon(event.title, event.communityName),
-                    size: 150,
-                    color: Colors.white.withValues(alpha: 0.12),
+                // Week 13 (FR-08): the poster fills the card, under a scrim
+                // that keeps the white text readable.
+                if (event.hasPoster) ...[
+                  Positioned.fill(
+                    key: const ValueKey('announcement-poster'),
+                    child: PosterImage(
+                      path: event.posterUrl,
+                      fallback: const SizedBox.shrink(),
+                    ),
                   ),
-                ),
+                  const Positioned.fill(child: PosterScrim()),
+                ] else
+                  // Decoration: a large faded icon in the corner.
+                  Positioned(
+                    right: -18,
+                    bottom: -22,
+                    child: Icon(
+                      eventIcon(event.title, event.communityName),
+                      size: 150,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                  ),
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(

@@ -1,5 +1,6 @@
 import '../domain/event.dart';
 import '../domain/registration_result.dart';
+import '../domain/ticket.dart';
 
 /// The Event object of the feed and detail responses (docs/api.md).
 /// `community_name`, `free_places`, `my_status` and `waiting_position` are
@@ -26,6 +27,12 @@ Event eventFromJson(Map<String, Object?> json) {
     },
     previousStartsAt: _optionalDateTime(json, 'previous_starts_at'),
     cancelledAt: _optionalDateTime(json, 'cancelled_at'),
+    // v5 fields (Week 13); absent on an older server or cache.
+    endsAt: _optionalDateTime(json, 'ends_at'),
+    posterUrl: json['poster_url'] as String?,
+    checkedInAt: _optionalDateTime(json, 'checked_in_at'),
+    myRating: json['my_rating'] as int?,
+    feedbackOpen: json['feedback_open'] as bool? ?? false,
   );
 }
 
@@ -53,6 +60,11 @@ Map<String, Object?> eventToJson(Event event) => {
   'status': event.status.name,
   'previous_starts_at': event.previousStartsAt?.toUtc().toIso8601String(),
   'cancelled_at': event.cancelledAt?.toUtc().toIso8601String(),
+  'ends_at': event.endsAt.toUtc().toIso8601String(),
+  'poster_url': event.posterUrl,
+  'checked_in_at': event.checkedInAt?.toUtc().toIso8601String(),
+  'my_rating': event.myRating,
+  'feedback_open': event.feedbackOpen,
 };
 
 /// Body of `GET /feed` (docs/api.md): `{ "items": [...], "next_cursor": ... }`,
@@ -110,3 +122,25 @@ T _field<T>(Map<String, Object?> json, String key) {
     'Field "$key" expected $T, got ${value.runtimeType}: $value',
   );
 }
+
+/// Body of `GET /events/{id}/ticket` (docs/api.md, Week 13).
+Ticket ticketFromJson(Map<String, Object?> json) => Ticket(
+  eventId: _field<int>(json, 'event_id'),
+  registrationId: _field<int>(json, 'registration_id'),
+  code: _field<String>(json, 'code'),
+  qr: _field<String>(json, 'qr'),
+  checkedInAt: _optionalDateTime(json, 'checked_in_at'),
+  checkInOpensAt: _dateTime(json, 'check_in_opens_at'),
+  checkInClosesAt: _dateTime(json, 'check_in_closes_at'),
+);
+
+/// The inverse of [ticketFromJson], for the offline copy of a ticket.
+Map<String, Object?> ticketToJson(Ticket ticket) => {
+  'event_id': ticket.eventId,
+  'registration_id': ticket.registrationId,
+  'code': ticket.code,
+  'qr': ticket.qr,
+  'checked_in_at': ticket.checkedInAt?.toUtc().toIso8601String(),
+  'check_in_opens_at': ticket.checkInOpensAt.toUtc().toIso8601String(),
+  'check_in_closes_at': ticket.checkInClosesAt.toUtc().toIso8601String(),
+};
